@@ -1,0 +1,10 @@
+node_modules/
+ogg_extracted/
+backup/
+notepad tools/
+ogg.zip
+package-lock.json
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

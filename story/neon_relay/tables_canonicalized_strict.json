@@ -1,0 +1,489 @@
+{
+  "schema_version": 3,
+  "parser_contract": "strict-standalone-upper-snake-only",
+  "source": "full_story_canonicalized.md",
+  "named_table_count": 6,
+  "unbound_markdown_table_count": 5,
+  "tables": {
+    "RESIDENT_CACHE": {
+      "chapter": 1,
+      "chapter_title": "存在しない住民",
+      "columns": [
+        "resident_id",
+        "display_name",
+        "status",
+        "last_sector"
+      ],
+      "rows": [
+        {
+          "resident_id": "R001",
+          "display_name": "佐伯レン",
+          "status": "ACTIVE",
+          "last_sector": "S1"
+        },
+        {
+          "resident_id": "R002",
+          "display_name": "黒田ミナ",
+          "status": "ACTIVE",
+          "last_sector": "S3"
+        },
+        {
+          "resident_id": "R003",
+          "display_name": "UNKNOWN-07",
+          "status": "MISSING",
+          "last_sector": "S4"
+        },
+        {
+          "resident_id": "R004",
+          "display_name": "羽鳥イオ",
+          "status": "MISSING",
+          "last_sector": "S4"
+        },
+        {
+          "resident_id": "R005",
+          "display_name": "千葉ユノ",
+          "status": "MISSING",
+          "last_sector": "S2"
+        },
+        {
+          "resident_id": "R006",
+          "display_name": "七瀬セラ",
+          "status": "ACTIVE",
+          "last_sector": "S2"
+        },
+        {
+          "resident_id": "R007",
+          "display_name": "朝霧トウマ",
+          "status": "MISSING",
+          "last_sector": "S4"
+        }
+      ],
+      "line_start": 61,
+      "line_end": 69,
+      "preceding_line": "RESIDENT_CACHE",
+      "preceding_line_number": 59,
+      "name": "RESIDENT_CACHE"
+    },
+    "SUPPLY_TRANSFER_0911": {
+      "chapter": 2,
+      "chapter_title": "薬の行き先",
+      "columns": [
+        "transfer_id",
+        "item",
+        "quantity",
+        "destination"
+      ],
+      "rows": [
+        {
+          "transfer_id": "T01",
+          "item": "WATER",
+          "quantity": 12,
+          "destination": "S1"
+        },
+        {
+          "transfer_id": "T02",
+          "item": "FOOD",
+          "quantity": 18,
+          "destination": "S2"
+        },
+        {
+          "transfer_id": "T03",
+          "item": "MEDICINE",
+          "quantity": 14,
+          "destination": "S4"
+        },
+        {
+          "transfer_id": "T04",
+          "item": "BATTERY",
+          "quantity": 9,
+          "destination": "S4"
+        },
+        {
+          "transfer_id": "T05",
+          "item": "WATER",
+          "quantity": 21,
+          "destination": "S4"
+        },
+        {
+          "transfer_id": "T06",
+          "item": "MEDICINE",
+          "quantity": 17,
+          "destination": "S4"
+        },
+        {
+          "transfer_id": "T07",
+          "item": "FOOD",
+          "quantity": 10,
+          "destination": "S1"
+        },
+        {
+          "transfer_id": "T08",
+          "item": "BATTERY",
+          "quantity": 4,
+          "destination": "S3"
+        },
+        {
+          "transfer_id": "T09",
+          "item": "FOOD",
+          "quantity": 25,
+          "destination": "S4"
+        },
+        {
+          "transfer_id": "T10",
+          "item": "WATER",
+          "quantity": 8,
+          "destination": "S2"
+        }
+      ],
+      "line_start": 146,
+      "line_end": 157,
+      "preceding_line": "SUPPLY_TRANSFER_0911",
+      "preceding_line_number": 144,
+      "name": "SUPPLY_TRANSFER_0911"
+    },
+    "EVAC_BATCH_0911": {
+      "chapter": 3,
+      "chapter_title": "30人の部屋に83人",
+      "columns": [
+        "batch_id",
+        "sector",
+        "people"
+      ],
+      "rows": [
+        {
+          "batch_id": "B01",
+          "sector": "S1",
+          "people": 8
+        },
+        {
+          "batch_id": "B02",
+          "sector": "S1",
+          "people": 11
+        },
+        {
+          "batch_id": "B03",
+          "sector": "S2",
+          "people": 13
+        },
+        {
+          "batch_id": "B04",
+          "sector": "S2",
+          "people": 9
+        },
+        {
+          "batch_id": "B05",
+          "sector": "S3",
+          "people": 7
+        },
+        {
+          "batch_id": "B06",
+          "sector": "S4",
+          "people": 21
+        },
+        {
+          "batch_id": "B07",
+          "sector": "S4",
+          "people": 19
+        },
+        {
+          "batch_id": "B08",
+          "sector": "S4",
+          "people": 16
+        },
+        {
+          "batch_id": "B09",
+          "sector": "S4",
+          "people": 27
+        }
+      ],
+      "line_start": 261,
+      "line_end": 271,
+      "preceding_line": "EVAC_BATCH_0911",
+      "preceding_line_number": 259,
+      "name": "EVAC_BATCH_0911"
+    },
+    "PERSON_INDEX": {
+      "chapter": 4,
+      "chapter_title": "名前を取り戻す",
+      "columns": [
+        "resident_id",
+        "legal_name",
+        "credential_id"
+      ],
+      "rows": [
+        {
+          "resident_id": "R001",
+          "legal_name": "佐伯レン",
+          "credential_id": "C101"
+        },
+        {
+          "resident_id": "R002",
+          "legal_name": "黒田ミナ",
+          "credential_id": "C102"
+        },
+        {
+          "resident_id": "R003",
+          "legal_name": "如月アヤ",
+          "credential_id": "C773"
+        },
+        {
+          "resident_id": "R004",
+          "legal_name": "羽鳥イオ",
+          "credential_id": "C441"
+        },
+        {
+          "resident_id": "R005",
+          "legal_name": "千葉ユノ",
+          "credential_id": "C225"
+        },
+        {
+          "resident_id": "R006",
+          "legal_name": "七瀬セラ",
+          "credential_id": "C119"
+        },
+        {
+          "resident_id": "R007",
+          "legal_name": "朝霧トウマ",
+          "credential_id": "C908"
+        }
+      ],
+      "line_start": 380,
+      "line_end": 388,
+      "preceding_line": "PERSON_INDEX",
+      "preceding_line_number": 378,
+      "name": "PERSON_INDEX"
+    },
+    "ACCESS_LOG": {
+      "chapter": 4,
+      "chapter_title": "名前を取り戻す",
+      "columns": [
+        "log_id",
+        "credential_id",
+        "gate",
+        "event",
+        "time"
+      ],
+      "rows": [
+        {
+          "log_id": "L01",
+          "credential_id": "C101",
+          "gate": "S1-NORTH",
+          "event": "IN",
+          "time": "22:08"
+        },
+        {
+          "log_id": "L02",
+          "credential_id": "C441",
+          "gate": "S4-P6",
+          "event": "IN",
+          "time": "23:09"
+        },
+        {
+          "log_id": "L03",
+          "credential_id": "C773",
+          "gate": "S4-P6",
+          "event": "IN",
+          "time": "23:11"
+        },
+        {
+          "log_id": "L04",
+          "credential_id": "C908",
+          "gate": "S4-P6",
+          "event": "IN",
+          "time": "23:14"
+        },
+        {
+          "log_id": "L05",
+          "credential_id": "C773",
+          "gate": "ARCHIVE-04",
+          "event": "IN",
+          "time": "23:39"
+        },
+        {
+          "log_id": "L06",
+          "credential_id": "C773",
+          "gate": "ARCHIVE-04",
+          "event": "OUT",
+          "time": "23:43"
+        }
+      ],
+      "line_start": 392,
+      "line_end": 399,
+      "preceding_line": "ACCESS_LOG",
+      "preceding_line_number": 390,
+      "name": "ACCESS_LOG"
+    },
+    "TRANSIT_SHADOW": {
+      "chapter": 5,
+      "chapter_title": "透明都市",
+      "columns": [
+        "credential_id",
+        "destination",
+        "route_state"
+      ],
+      "rows": [
+        {
+          "credential_id": "C441",
+          "destination": "CENTRAL",
+          "route_state": "RETURNED"
+        },
+        {
+          "credential_id": "C773",
+          "destination": "NORTH-LATTICE",
+          "route_state": "HIDDEN"
+        },
+        {
+          "credential_id": "C908",
+          "destination": "NORTH-LATTICE",
+          "route_state": "HIDDEN"
+        },
+        {
+          "credential_id": "...",
+          "destination": "...",
+          "route_state": "..."
+        }
+      ],
+      "line_start": 544,
+      "line_end": 549,
+      "preceding_line": "TRANSIT_SHADOW",
+      "preceding_line_number": 542,
+      "name": "TRANSIT_SHADOW"
+    }
+  },
+  "unbound_tables": [
+    {
+      "chapter": 1,
+      "chapter_title": "存在しない住民",
+      "columns": [
+        "resident_id",
+        "display_name"
+      ],
+      "rows": [
+        {
+          "resident_id": "R003",
+          "display_name": "UNKNOWN-07"
+        },
+        {
+          "resident_id": "R004",
+          "display_name": "羽鳥イオ"
+        },
+        {
+          "resident_id": "R007",
+          "display_name": "朝霧トウマ"
+        }
+      ],
+      "line_start": 86,
+      "line_end": 90,
+      "preceding_line": "正しく実行すると、端末は三行だけを返した。",
+      "preceding_line_number": 84
+    },
+    {
+      "chapter": 2,
+      "chapter_title": "薬の行き先",
+      "columns": [
+        "destination",
+        "total_quantity"
+      ],
+      "rows": [
+        {
+          "destination": "S1",
+          "total_quantity": 22
+        },
+        {
+          "destination": "S2",
+          "total_quantity": 26
+        },
+        {
+          "destination": "S3",
+          "total_quantity": 4
+        },
+        {
+          "destination": "S4",
+          "total_quantity": 86
+        }
+      ],
+      "line_start": 174,
+      "line_end": 179,
+      "preceding_line": "結果。",
+      "preceding_line_number": 172
+    },
+    {
+      "chapter": 3,
+      "chapter_title": "30人の部屋に83人",
+      "columns": [
+        "sector",
+        "emergency_capacity"
+      ],
+      "rows": [
+        {
+          "sector": "S1",
+          "emergency_capacity": 40
+        },
+        {
+          "sector": "S2",
+          "emergency_capacity": 35
+        },
+        {
+          "sector": "S3",
+          "emergency_capacity": 20
+        },
+        {
+          "sector": "S4",
+          "emergency_capacity": 30
+        }
+      ],
+      "line_start": 275,
+      "line_end": 280,
+      "preceding_line": "NORAが公式施設台帳を並べる。",
+      "preceding_line_number": 273
+    },
+    {
+      "chapter": 3,
+      "chapter_title": "30人の部屋に83人",
+      "columns": [
+        "sector",
+        "total_people"
+      ],
+      "rows": [
+        {
+          "sector": "S4",
+          "total_people": 83
+        }
+      ],
+      "line_start": 296,
+      "line_end": 298,
+      "preceding_line": "結果。",
+      "preceding_line_number": 294
+    },
+    {
+      "chapter": 4,
+      "chapter_title": "名前を取り戻す",
+      "columns": [
+        "legal_name",
+        "gate",
+        "time"
+      ],
+      "rows": [
+        {
+          "legal_name": "羽鳥イオ",
+          "gate": "S4-P6",
+          "time": "23:09"
+        },
+        {
+          "legal_name": "如月アヤ",
+          "gate": "S4-P6",
+          "time": "23:11"
+        },
+        {
+          "legal_name": "朝霧トウマ",
+          "gate": "S4-P6",
+          "time": "23:14"
+        }
+      ],
+      "line_start": 420,
+      "line_end": 424,
+      "preceding_line": "結果。",
+      "preceding_line_number": 418
+    }
+  ]
+}

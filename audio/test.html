@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Audio Test v3</title>
+<style>
+body{background:#020617;color:#e2e8f0;font-family:sans-serif;padding:20px;text-align:center}
+button{font-size:20px;padding:20px 40px;margin:10px;border-radius:12px;border:1px solid #22d3ee;background:#0b1220;color:#67e8f9}
+#status{margin-top:20px;font-size:13px;color:#94a3b8;white-space:pre-wrap;text-align:left;font-family:monospace}
+</style>
+</head>
+<body>
+<h1>Audio Test v3</h1>
+<button id="btnT">transmission</button>
+<button id="btnV">victory</button>
+<p id="status">Tap to test</p>
+<script>
+const status = document.getElementById('status');
+
+function log(msg){
+  status.textContent += '\n' + msg;
+}
+
+// 初回タップでオーディオセッションをplaybackカテゴリに設定（iOS 16.4+）
+document.body.addEventListener('touchstart', function once(){
+  if(navigator.audioSession){
+    try{
+      navigator.audioSession.type = 'playback';
+      status.textContent = 'audioSession=playback';
+    }catch(e){
+      status.textContent = 'audioSession error: ' + e.message;
+    }
+  } else {
+    status.textContent = 'audioSession not supported';
+  }
+  document.body.removeEventListener('touchstart', once);
+}, {passive:true});
+
+function play(file){
+  log('--- play ' + file);
+  const a = new Audio();
+  a.src = file;
+  a.volume = 1.0;
+  a.preload = 'auto';
+  
+  a.addEventListener('canplaythrough', () => log('canplaythrough'));
+  a.addEventListener('playing', () => log('playing'));
+  a.addEventListener('ended', () => log('ended'));
+  a.addEventListener('error', () => log('ERROR code=' + a.error.code));
+  
+  const p = a.play();
+  if(p && p.then){
+    p.then(()=>log('play() resolved'))
+     .catch(e=>log('play() rejected: ' + e.message));
+  }
+}
+
+document.getElementById('btnT').addEventListener('click', () => play('transmission.m4a'));
+document.getElementById('btnV').addEventListener('click', () => play('victory.m4a'));
+</script>
+</body>
+</html>
