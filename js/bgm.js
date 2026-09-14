@@ -15,6 +15,13 @@ export class BgmEngine {
     this.currentName = null;
     this.volume = 0.25;
     this.unlocked = false;
+    this.muted = false;
+    this.audioElements = new Set();
+  }
+
+  setMuted(muted){
+    this.muted = muted;
+    for(const audio of this.audioElements) audio.muted = muted;
   }
 
   unlock(){
@@ -36,6 +43,7 @@ export class BgmEngine {
       if(i >= steps){
         clearInterval(timer);
         try { audio.pause(); audio.src = ''; } catch(e){}
+        this.audioElements.delete(audio);
       }
     }, dt);
   }
@@ -58,7 +66,9 @@ export class BgmEngine {
     const a = new Audio('audio/' + file);
     a.loop = loop;
     a.volume = typeof vol === 'number' ? vol : this.volume;
+    a.muted = this.muted;
     a.preload = 'auto';
+    this.audioElements.add(a);
     a.play().catch(e => console.warn('BGM play failed:', name, e.message));
     this.current = a;
     this.currentName = name;

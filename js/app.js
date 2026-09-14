@@ -1,6 +1,6 @@
 // js/app.js
-import { SoundEngine } from './sound.js';
-import { BgmEngine } from './bgm.js';
+import { SoundEngine } from './sound.js?v=20260915-mute-2';
+import { BgmEngine } from './bgm.js?v=20260915-mute-2';
 import { STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE } from './data.js';
 import { judge } from './validator.js';
 import { UIManager } from './ui.js';
@@ -9,6 +9,7 @@ const sound = new SoundEngine();
 const bgm = new BgmEngine();
 const CHAPTER_BGM = ['airy', 'pulse', 'pulse', 'transmission'];
 const PROGRESS_KEY = 'caravan_progress';
+const MUTE_KEY = 'caravan_muted';
 const ROW_PREDICTION_MIN_SAMPLE = 8;
 
 function vibrate(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
@@ -133,10 +134,14 @@ class App {
 
     this.bgmTrack = 'title';
     this.bgmResumeTimer = null;
-    const unlockBgm = () => {
+    try { this.muted = localStorage.getItem(MUTE_KEY) === 'true'; }
+    catch(e){ this.muted = false; }
+    const unlockBgm = event => {
       if(bgm.unlocked) return;
       bgm.unlock();
-      this.setBgm(this.bgmTrack);
+      const target = event.target;
+      const tappedMute = target && target.nodeType === 1 && target.closest('#muteBtn');
+      if(!this.muted && !tappedMute) this.setBgm(this.bgmTrack);
     };
     document.addEventListener('touchstart', unlockBgm, { once:true, passive:true });
     document.addEventListener('click', unlockBgm, { once:true, capture:true });
@@ -164,11 +169,38 @@ class App {
       onRestart:     () => { sound.tap(); this.restart(); }
     });
 
+    this.muteBtn = document.createElement('button');
+    this.muteBtn.type = 'button';
+    this.muteBtn.id = 'muteBtn';
+    this.muteBtn.addEventListener('click', () => this.toggleMute());
+    document.getElementById('hud').appendChild(this.muteBtn);
+    this.applyMuteState();
+
     this.resumeFromProgress();
     this.load();
   }
 
   // ---- BGM ----
+  applyMuteState(){
+    if(typeof sound.setMuted === 'function') sound.setMuted(this.muted);
+    if(typeof bgm.setMuted === 'function') bgm.setMuted(this.muted);
+    this.muteBtn.textContent = this.muted ? '🔇' : '🔊';
+    const label = this.muted ? '音声をオンにする' : '音声をミュート';
+    this.muteBtn.setAttribute('aria-label', label);
+    this.muteBtn.setAttribute('aria-pressed', String(this.muted));
+    this.muteBtn.title = label;
+  }
+
+  toggleMute(){
+    this.muted = !this.muted;
+    this.applyMuteState();
+    if(!this.muted){
+      sound.init();
+      if(bgm.unlocked && !bgm.current) bgm.play(this.bgmTrack);
+    }
+    try { localStorage.setItem(MUTE_KEY, String(this.muted)); } catch(e){}
+  }
+
   setBgm(name, loop = true, volume = bgm.volume){
     clearTimeout(this.bgmResumeTimer);
     this.bgmResumeTimer = null;

@@ -1,20 +1,30 @@
 // js/sound.js
 export class SoundEngine {
-  constructor(){ this.ctx = null; }
+  constructor(){ this.ctx = null; this.master = null; this.muted = false; }
+
+  setMuted(muted){
+    this.muted = muted;
+    if(this.master) this.master.gain.value = muted ? 0 : 1;
+  }
 
   init(){
+    if(this.muted) return;
     if(!this.ctx){
       const AC = window.AudioContext || window.webkitAudioContext;
-      if(AC) this.ctx = new AC();
+      if(AC){
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.connect(this.ctx.destination);
+      }
     }
     if(this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
   _blip(type, f0, f1, at, dur, vol){
-    if(!this.ctx) return;
+    if(!this.ctx || this.muted) return;
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
-    o.connect(g); g.connect(this.ctx.destination);
+    o.connect(g); g.connect(this.master);
     o.type = type;
     o.frequency.setValueAtTime(f0, at);
     if(f1 !== f0) o.frequency.linearRampToValueAtTime(f1, at + dur);
