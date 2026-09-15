@@ -190,8 +190,7 @@ class App {
     this.rowPredictionRecorded = false;
     this.examStatus = null; // null | 'pass' | 'retry'
 
-    // ---- CH1限定: 失敗回数ベースの段階ヒント / クリアタイプ記録 ----
-    this.failCount = {};
+    // ---- CH1限定: Story Clearタイプ記録 (ChapterSessionのChapterClearedイベントから書き込まれる) ----
     this.clearTypes = new Array(STAGES.length).fill(null);
 
     this.ui = new UIManager({
@@ -739,7 +738,6 @@ class App {
     this.predicted = null;
     this.timedOut = false;
     this.rowPredictionRecorded = false;
-    if(this.failCount[this.stage] === undefined) this.failCount[this.stage] = 0;
     this.ui.setProtagonist(this.stage === 0 ? 'idle' : 'hidden');
 
     this.ui.hideHint();
@@ -870,7 +868,6 @@ class App {
     this.rowPredictionAttempts = 0;
     this.rowPredictionCorrect = 0;
     this.examStatus = null;
-    this.failCount = {};
     this.clearTypes = new Array(STAGES.length).fill(null);
     this.saveProgress();
     this.ui.hideResult();
