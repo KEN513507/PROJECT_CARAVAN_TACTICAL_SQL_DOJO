@@ -4,6 +4,18 @@ import { BgmEngine } from './bgm.js?v=20260915-sprint2';
 import { STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260915-sprint2';
 import { judge } from './validator.js';
 import { UIManager } from './ui.js?v=20260915-sprint2';
+import { ChapterSession, Phase } from './chapter-session.js?v=20260915-sprint2';
+
+// ---- Presentation側マッピング (Domainはworkspace名を知らない) ----
+const WORKSPACE_BY_PHASE = {
+  [Phase.AWAITING_QUERY]:      'inspect',
+  [Phase.QUERY_DRAFTING]:      'compose',
+  [Phase.AWAITING_PREDICTION]: 'predict',
+  [Phase.QUERY_EXECUTING]:     'executing',
+  [Phase.QUERY_REJECTED]:      'compose',
+  [Phase.EVIDENCE_REVEALED]:   'evidence',
+  [Phase.CHAPTER_CLEARED]:     'story'
+};
 
 const sound = new SoundEngine();
 const bgm = new BgmEngine();
@@ -143,7 +155,6 @@ function buildCertificateText(report){
 class App {
   constructor(){
     this.stage = 0;
-    this.built = [];
     this.xp = 0;
     this.cleared = new Array(STAGES.length).fill(false);
     this.timeLeft = 0;
@@ -197,6 +208,9 @@ class App {
       onRestart:     () => { sound.tap(); this.restart(); }
     });
 
+    this.session = new ChapterSession('CH1');
+    this._bindSession(this.session);
+
     this.muteBtn = document.createElement('button');
     this.muteBtn.type = 'button';
     this.muteBtn.id = 'muteBtn';
@@ -206,6 +220,22 @@ class App {
 
     this.resumeFromProgress();
     this.showCivisBoot(() => this.boot());
+  }
+
+  // ---- Domainイベント → Presentation効果 (workspace切替・進捗保存) ----
+  _bindSession(session){
+    session.on('PhaseChanged', ({ to }) => {
+      if(this.stage === 0){
+        document.body.dataset.workspace = WORKSPACE_BY_PHASE[to] || 'inspect';
+      }
+    });
+    session.on('EvidenceRevealed', () => {
+      // Effectsのみ。CH1の沈黙演出はexecuteRun内で処理済みのためここでは何もしない。
+    });
+    session.on('ChapterCleared', ({ clearType }) => {
+      this.clearTypes[this.stage] = clearType;
+      this.saveProgress();
+    });
   }
 
   // ---- CIVIS FIELD CONSOLE 演出 (起動時1.5秒) ----
@@ -440,16 +470,20 @@ class App {
     return set;
   }
 
+  // ---- Step B: 互換用の読み取り専用ゲッター (setterは持たない) ----
+  get built(){ return this.session.draft.tokens; }
+
   tapToken(t, k){
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
 
-    const last = this.built[this.built.length-1];
+    const last = this.session.draft.tokens[this.session.draft.tokens.length - 1];
     const lastIsValue = last && (last.k === 'col' || last.k === 'func');
     const newIsValue  = (k === 'col' || k === 'func');
-    if(lastIsValue && newIsValue) this.built.push({ t:',', k:'punct' });
-
-    this.built.push({ t, k });
+    if(lastIsValue && newIsValue){
+      this.session.addToken({ t: ',', k: 'punct' });
+    }
+    this.session.addToken({ t, k });
     this.refreshMonitor();
     if(this.tutorialActive) this.advanceTutorial(t, k);
   }
@@ -468,10 +502,10 @@ class App {
   util(a){
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
-    if(a === 'comma') this.built.push({ t:',', k:'punct' });
-    else if(a === 'undo'){ this.built.pop(); this.editCount++; }
-    else if(a === 'br'){ this.built.push({ t:'\n', k:'punct' }); this.editCount++; }
-    else if(a === 'clear'){ this.built = []; this.editCount++; }
+    if(a === 'comma') this.session.addToken({ t: ',', k: 'punct' });
+    else if(a === 'undo'){ this.session.removeToken(); this.editCount++; }
+    else if(a === 'br'){ this.session.addToken({ t: '\n', k: 'punct' }); this.editCount++; }
+    else if(a === 'clear'){ this.session.clearDraft(); this.editCount++; }
     this.refreshMonitor();
   }
 
@@ -483,12 +517,14 @@ class App {
   run(){
     if(this.timedOut) return;
     if(this.solved){ this.next(); return; }
-    if(this.predicted === null){
+    if(this.session.phase === Phase.QUERY_DRAFTING){
       sound.tap();
+      this.session.submit();
       this.ui.showPredictBar(STAGES[this.stage].rowChoices, choice => this.onPredicted(choice));
       return;
     }
-    this.executeRun();
+    // AWAITING_QUERY (未入力) / QUERY_REJECTED (直前の不正解のまま未編集) では何もしない。
+    // トークンをタップして draft を進めるか、retry で組み直すまで Run は無効。
   }
 
   onPredicted(choice){
@@ -502,6 +538,7 @@ class App {
       else this.errorTypes.rowPrediction++;
     }
     this.ui.hidePredictBar();
+    this.session.submitPrediction(choice);
     this.executeRun();
   }
 
@@ -509,11 +546,14 @@ class App {
     if(this.solved || this.timedOut) return;
     this.ui.hidePredictBar();
     const st = STAGES[this.stage];
-    const built = this.built.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
+    const built = this.session.draft.tokens.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
     const r = judge(built, st.answers);
 
     if(r.empty){
       sound.error();
+      // Domain: 空クエリは「拒否」として扱い、QUERY_REJECTED へ戻して再入力できるようにする
+      // (QUERY_EXECUTING のまま留まると addToken が永久にガードされ操作不能になるため)。
+      this.session.reject('empty_query');
       this.ui.setFeedback('クエリが空です。トークンをタップして組み立てよう。','ng');
       return;
     }
@@ -527,15 +567,23 @@ class App {
         this.ui.hideTutorial();
         this.ui.clearTokenHighlight();
       }
+
+      // Domain: reject ではなく evidence へ
+      this.session.recordExecution({ built, resultSet: st.resultSet, at: Date.now() });
+      this.session.revealEvidence({ rows: st.resultSet.rows, sourceQuery: built, significance: null });
+
       if(this.stage === 0){
-        // CH1限定: 正解後、演出前に0.8秒の沈黙を挟む
-        this.clearTypes[0] = this.determineCh1ClearType();
+        // Effects (CH1限定の沈黙演出)。Domainはこの演出を知らない。
         this.ui.renderResultSet(st.resultSet);
         this.ui.setFeedback('', '');
         this.ui.setRunDisabled(true);
         this.ui.setProtagonist('thinking');
-        setTimeout(() => this.finishCorrect(st), 800);
+        setTimeout(() => {
+          this.session.clear();
+          this.finishCorrect(st);
+        }, 800);
       } else {
+        this.session.clear();
         this.finishCorrect(st);
       }
     } else {
@@ -543,7 +591,8 @@ class App {
       this.executionErrors++;
       const errorType = classifyConceptError(built, st);
       if(errorType) this.errorTypes[errorType]++;
-      if(this.stage === 0) this.handleCh1Fail(st);
+      this.session.reject('sql_mismatch');
+      if(this.stage === 0) this._handleReject();
       else {
         this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
         this.ui.showRetryButton();
@@ -582,11 +631,13 @@ class App {
     if(st.reveal) this.ui.renderReveal(st.reveal);
   }
 
-  // ---- CH1限定: 失敗回数に応じた段階ヒント ----
-  handleCh1Fail(st){
-    this.failCount[0] = (this.failCount[0] || 0) + 1;
-    const n = this.failCount[0];
+  // ---- CH1限定: Domainの rejectionCount に応じた段階ヒント ----
+  // (Story Clearタイプ自体は ChapterSession._resolveClearType が assistanceLevel から判定する)
+  _handleReject(){
+    const n = this.session.rejectionCount;
+    const st = STAGES[this.stage];
     this.ui.setProtagonist('thinking');
+
     if(n === 1){
       this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
     } else if(n === 2){
@@ -594,21 +645,15 @@ class App {
     } else if(n === 3){
       this.ui.setFeedback('SELECT → FROM → WHERE の順で組み立てます','ng');
     } else if(n === 4){
+      this.session.requestHint();
       this.ui.setFeedback('❌ 不正解… 構造ヒントを確認しよう。','ng');
       this.ui.showHint(st.hint2, '構造ヒント');
     } else {
+      this.session.requestHint();
       this.ui.setFeedback('❌ 不正解… 模範形を確認しよう。','ng');
       this.ui.showHint(st.answers[0], '模範解答');
     }
     this.ui.showRetryButton();
-  }
-
-  // ---- CH1限定: 失敗回数からStory Clearタイプを判定 ----
-  determineCh1ClearType(){
-    const n = this.failCount[0] || 0;
-    if(n <= 3) return 'INDEPENDENT';
-    if(n === 4) return 'ASSISTED';
-    return 'PRACTICE';
   }
 
   hint(){
@@ -682,7 +727,13 @@ class App {
 
   load(){
     const st = STAGES[this.stage];
-    this.built = [];
+    // Domain: 同じ章のやり直し(retry)は draft だけ空にして継続する。
+    // CHAPTER_CLEARED から先(次の章へ進む/選び直す)は clearDraft() 自体がガードで false を返すため、
+    // その時だけ新しい ChapterSession を作り直す。
+    if(!this.session.clearDraft()){
+      this.session = new ChapterSession('CH' + (this.stage + 1));
+      this._bindSession(this.session);
+    }
     this.assistLevel = 0;
     this.solved = false;
     this.predicted = null;
