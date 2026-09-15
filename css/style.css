@@ -177,6 +177,41 @@ table.mini td.pk{ color:var(--amber); font-weight:700; }
   color:#e2e8f0;
 }
 
+/* ---- TUTORIAL PANEL (CHAPTER 1 初回のみ・NORAの案内) ---- */
+#tutorialPanel{
+  display:none;
+  flex:0 0 auto;
+  background:#082f49;
+  border:1px solid #0e7490;
+  border-left:3px solid var(--cyan);
+  border-radius:8px;
+  padding:6px 8px;
+}
+#tutorialPanel.show{ display:block; }
+.tutorial-badge{
+  font-size:9.5px;
+  font-weight:800;
+  letter-spacing:.05em;
+  color:var(--cyan);
+  margin-bottom:2px;
+}
+.tutorial-text{
+  font-size:12px;
+  line-height:1.4;
+  color:#e0f7fa;
+  font-weight:600;
+}
+.tutorial-target{
+  outline:2px solid var(--cyan);
+  outline-offset:1px;
+  box-shadow:0 0 0 4px rgba(34,211,238,.28);
+  animation:tutorialPulse 1.1s ease-in-out infinite;
+}
+@keyframes tutorialPulse{
+  0%,100%{ box-shadow:0 0 0 4px rgba(34,211,238,.28); }
+  50%{ box-shadow:0 0 0 7px rgba(34,211,238,.08); }
+}
+
 /* ---- MONITOR ---- */
 #monitorWrap{
   flex:1 1 auto;
@@ -752,6 +787,23 @@ table.resultset td{ color:#cbd5e1; }
   font-weight:900;
   text-align:center;
 }
+.story-title{
+  margin:8vh 0 4px;
+  font-family:"Orbitron","Noto Sans JP",sans-serif;
+  font-size:22px;
+  font-weight:900;
+  letter-spacing:.06em;
+  color:var(--cyan);
+  text-align:center;
+  text-shadow:0 0 18px rgba(34,211,238,.45);
+}
+.story-subtitle{
+  margin:0 0 8vh;
+  font-size:11px;
+  letter-spacing:.04em;
+  color:#94a3b8;
+  text-align:center;
+}
 .story-heading{
   margin:14px 0 6px;
   font-size:10.5px;
@@ -852,4 +904,83 @@ table.resultset td{ color:#cbd5e1; }
   #resultPanel, #altPanel, #revealPanel{ padding:2px; }
   #mission{ padding:2px 5px; }
   table.mini th, table.mini td{ padding:0 2px; }
+}
+
+/* ---- CIVIS FIELD CONSOLE (起動時1.5秒) / AUDIT LOG (CH1→CH2 遷移時1.5秒) ---- */
+#civisBoot, #auditLog{
+  position:fixed; inset:0; z-index:90;
+  display:none;
+  align-items:center; justify-content:center;
+  background:#020617;
+  padding:16px;
+  text-align:center;
+}
+#civisBoot.show, #auditLog.show{ display:flex; }
+#civisBoot span, #auditLog span{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:14px;
+  letter-spacing:.08em;
+  color:var(--cyan);
+  text-shadow:0 0 18px rgba(34,211,238,.45);
+}
+
+/* ---- 主人公スプライト (CH1のみ) ---- */
+#protagonist{
+  position: fixed;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: min(72vw, 340px);
+  aspect-ratio: 1/1;
+  background-image: url('assets/characters/protagonist.png');
+  background-size: 200% 200%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity .6s ease, filter .6s ease;
+  filter: brightness(0.55) blur(0.3px);
+  mask-image: linear-gradient(to top, transparent 0%, black 30%);
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, black 30%);
+}
+#protagonist.show { opacity: 0.7; }
+#protagonist[data-mood="idle"]       { background-position: 0% 0%; }
+#protagonist[data-mood="thinking"]   { background-position: 100% 0%; }
+#protagonist[data-mood="determined"] { background-position: 0% 100%; }
+#protagonist[data-mood="defeated"]   { background-position: 100% 100%; }
+#app { position: relative; z-index: 10; }
+
+/* ---- PC表示を iPhone 16e と同じ枠に収める ---- */
+@media (min-width: 768px) {
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #000;
+    min-height: 100dvh;
+  }
+  #app {
+    width: 430px;
+    height: 932px;
+    max-height: 95dvh;
+    border: 1px solid #1e293b;
+    border-radius: 24px;
+    box-shadow: 0 0 60px rgba(34, 211, 238, 0.08);
+    overflow: hidden;
+  }
+  /* 固定配置要素も枠内に収める */
+  #civisBoot, #auditLog, #storyOverlay, #result {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 430px;
+    height: 932px;
+    max-height: 95dvh;
+    border-radius: 24px;
+    overflow: hidden;
+  }
+  #protagonist {
+    position: fixed;
+    bottom: calc(50% - 466px + 8px);
+  }
 }

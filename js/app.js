@@ -1,16 +1,29 @@
 // js/app.js
-import { SoundEngine } from './sound.js?v=20260915-mute-2';
-import { BgmEngine } from './bgm.js?v=20260915-mute-2';
-import { STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE } from './data.js';
+import { SoundEngine } from './sound.js?v=20260915-sprint2';
+import { BgmEngine } from './bgm.js?v=20260915-sprint2';
+import { STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260915-sprint2';
 import { judge } from './validator.js';
-import { UIManager } from './ui.js';
+import { UIManager } from './ui.js?v=20260915-sprint2';
 
 const sound = new SoundEngine();
 const bgm = new BgmEngine();
 const CHAPTER_BGM = ['airy', 'pulse', 'pulse', 'transmission'];
 const PROGRESS_KEY = 'caravan_progress';
+const MASTERY_KEY = 'caravan_mastery';
 const MUTE_KEY = 'caravan_muted';
+const INTRO_KEY = 'caravan_intro_seen';
+const TUTORIAL_KEY = 'caravan_tutorial_seen';
 const ROW_PREDICTION_MIN_SAMPLE = 8;
+
+const CLEAR_TYPE_LABELS = {
+  MASTERED: '習得（自力）',
+  ASSISTED: 'ヒント付きクリア',
+  PRACTICE: '模範解答による練習'
+};
+function chapterKey(index){ return 'ch' + String(index + 1).padStart(2, '0'); }
+function clearTypeForAssist(level){
+  return level === 0 ? 'MASTERED' : (level < 4 ? 'ASSISTED' : 'PRACTICE');
+}
 
 function vibrate(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
 
@@ -98,6 +111,14 @@ function buildCertificateText(report){
   lines.push('Completed');
   lines.push(`${report.clearedCount} / ${report.totalStages} stages`);
   lines.push('');
+  lines.push('MASTERY SUMMARY');
+  Object.keys(report.masterySummary).forEach(type =>
+    lines.push(`${type.padEnd(10)}: ${report.masterySummary[type]} / ${report.totalStages}`));
+  lines.push('');
+  lines.push('CHAPTER RESULTS (latest successful attempts)');
+  report.chapters.forEach(ch =>
+    lines.push(`${ch.title} [${ch.clearType || (ch.completed ? 'UNASSESSED' : 'UNCLEARED')}] — ${ch.statusLabel}`));
+  lines.push('');
   lines.push('MASTERED');
   report.mastered.forEach(m => lines.push(`✓ ${m}`));
   lines.push('');
@@ -127,10 +148,13 @@ class App {
     this.cleared = new Array(STAGES.length).fill(false);
     this.timeLeft = 0;
     this.timerId = null;
-    this.usedModel = false;
+    this.assistLevel = 0; // 0: 自力、1〜3: ヒント、4: 完成SQL
+    this.mastery = this.loadMastery();
     this.solved = false;
     this.predicted = null;
     this.timedOut = false;
+    this.tutorialActive = false;
+    this.tutorialStep = -1;
 
     this.bgmTrack = 'title';
     this.bgmResumeTimer = null;
@@ -155,6 +179,10 @@ class App {
     this.rowPredictionRecorded = false;
     this.examStatus = null; // null | 'pass' | 'retry'
 
+    // ---- CH1限定: 失敗回数ベースの段階ヒント / クリアタイプ記録 ----
+    this.failCount = {};
+    this.clearTypes = new Array(STAGES.length).fill(null);
+
     this.ui = new UIManager({
       onToken:  (t,k) => this.tapToken(t,k),
       onUtil:   a     => this.util(a),
@@ -177,7 +205,41 @@ class App {
     this.applyMuteState();
 
     this.resumeFromProgress();
-    this.load();
+    this.showCivisBoot(() => this.boot());
+  }
+
+  // ---- CIVIS FIELD CONSOLE 演出 (起動時1.5秒) ----
+  showCivisBoot(cb){
+    const el = document.getElementById('civisBoot');
+    if(!el){ cb(); return; }
+    el.classList.add('show');
+    setTimeout(() => { el.classList.remove('show'); cb(); }, 1500);
+  }
+
+  // ---- 権限昇格ログ (CH1→CH2 遷移時1.5秒) ----
+  showAuditLog(cb){
+    const el = document.getElementById('auditLog');
+    if(!el){ cb(); return; }
+    el.classList.add('show');
+    setTimeout(() => { el.classList.remove('show'); cb(); }, 1500);
+  }
+
+  // ---- 起動フロー: 初回のみオープニングを挟む ----
+  boot(){
+    let introSeen = false;
+    try { introSeen = localStorage.getItem(INTRO_KEY) === 'true'; } catch(e){}
+    const isFreshStart = this.stage === 0 && this.xp === 0 && this.cleared.every(c => !c);
+    if(!introSeen && isFreshStart) this.showOpening();
+    else this.load();
+  }
+
+  showOpening(){
+    this.setBgm('title');
+    this.ui.showStoryOverlay(OPENING, () => {
+      try { localStorage.setItem(INTRO_KEY, 'true'); } catch(e){}
+      this.ui.hideStoryOverlay();
+      this.load();
+    }, '▶ 第4アーカイブへ');
   }
 
   // ---- BGM ----
@@ -216,6 +278,29 @@ class App {
   }
 
   // ---- 進捗の永続化 (localStorage) ----
+  loadMastery(){
+    const records = {};
+    try{
+      const data = JSON.parse(localStorage.getItem(MASTERY_KEY));
+      if(!data || typeof data !== 'object' || Array.isArray(data)) return records;
+      STAGES.forEach((_, i) => {
+        const key = chapterKey(i);
+        const entry = data[key];
+        if(entry && Number.isInteger(entry.assistLevel) && entry.assistLevel >= 0 &&
+          entry.assistLevel <= 4 && entry.clearType === clearTypeForAssist(entry.assistLevel)){
+          records[key] = { clearType: entry.clearType, assistLevel: entry.assistLevel };
+        }
+      });
+    }catch(e){}
+    return records;
+  }
+
+  recordMastery(clearType){
+    // 各章の直近の正解を保存。リトライや新しい周回だけでは記録を消さない。
+    this.mastery[chapterKey(this.stage)] = { clearType, assistLevel: this.assistLevel };
+    try { localStorage.setItem(MASTERY_KEY, JSON.stringify(this.mastery)); } catch(e){}
+  }
+
   loadProgressRaw(){
     try{
       const raw = localStorage.getItem(PROGRESS_KEY);
@@ -230,7 +315,7 @@ class App {
   saveProgress(){
     try{
       localStorage.setItem(PROGRESS_KEY, JSON.stringify({
-        xp: this.xp, stage: this.stage, cleared: this.cleared
+        xp: this.xp, stage: this.stage, cleared: this.cleared, clearTypes: this.clearTypes
       }));
     }catch(e){
       // iOS Safari プライベートモード等で保存できなくてもゲームは継続する
@@ -250,10 +335,13 @@ class App {
       this.xp = saved.xp;
       this.stage = Math.min(saved.stage, STAGES.length - 1);
       this.cleared = saved.cleared.length === STAGES.length ? saved.cleared : new Array(STAGES.length).fill(false);
+      this.clearTypes = Array.isArray(saved.clearTypes) && saved.clearTypes.length === STAGES.length
+        ? saved.clearTypes : new Array(STAGES.length).fill(null);
     } else {
       this.xp = 0;
       this.stage = 0;
       this.cleared = new Array(STAGES.length).fill(false);
+      this.clearTypes = new Array(STAGES.length).fill(null);
       this.saveProgress();
     }
   }
@@ -363,6 +451,18 @@ class App {
 
     this.built.push({ t, k });
     this.refreshMonitor();
+    if(this.tutorialActive) this.advanceTutorial(t, k);
+  }
+
+  advanceTutorial(t, k){
+    const next = this.tutorialStep + 1;
+    const step = TUTORIAL.steps[next];
+    if(!step || step.token !== t || step.kind !== k) return; // 手順から外れたタップは静かに無視
+    this.tutorialStep = next;
+    // 指示文は表示しない。ハイライトのみで次の一手を示す。
+    const after = TUTORIAL.steps[next + 1];
+    if(after) this.ui.highlightToken(after.token, after.kind);
+    else this.ui.highlightRunButton();
   }
 
   util(a){
@@ -406,6 +506,7 @@ class App {
   }
 
   executeRun(){
+    if(this.solved || this.timedOut) return;
     this.ui.hidePredictBar();
     const st = STAGES[this.stage];
     const built = this.built.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
@@ -420,44 +521,112 @@ class App {
     if(r.ok){
       this.stopTimer();
       this.solved = true;
-      sound.success(); vibrate([15,40,15,40,60]);
-      this.playVictory();
-      const bonus = this.timeLeft * 2;
-      let gain = Math.round((100 + bonus) * (this.usedModel ? 0.25 : 1));
-      const predictOk = this.predicted === st.resultSet.rows.length;
-      if(predictOk) gain += 30;
-      this.xp += gain;
-      this.cleared[this.stage] = true;
-      this.saveProgress();
-      this.ui.setHud(this.stage, STAGES.length, this.xp);
-      this.ui.setFeedback(
-        predictOk
-          ? `✅ 正解！ +${gain} XP（行数予測的中 +30） ─ 評価順に完全一致。`
-          : `✅ 正解！ +${gain} XP ─ 評価順に完全一致。（予測は外れ：実際は${st.resultSet.rows.length}行）`,
-        'ok');
-      this.ui.hideRetryButton();
-      this.ui.lockPad();
-      this.ui.markSolved(this.stage === STAGES.length - 1);
-      this.ui.renderResultSet(st.resultSet);
-      this.ui.renderAltAnswers(st.answers);
-      if(st.reveal) this.ui.renderReveal(st.reveal);
+      if(this.tutorialActive){
+        this.tutorialActive = false;
+        try { localStorage.setItem(TUTORIAL_KEY, 'true'); } catch(e){}
+        this.ui.hideTutorial();
+        this.ui.clearTokenHighlight();
+      }
+      if(this.stage === 0){
+        // CH1限定: 正解後、演出前に0.8秒の沈黙を挟む
+        this.clearTypes[0] = this.determineCh1ClearType();
+        this.ui.renderResultSet(st.resultSet);
+        this.ui.setFeedback('', '');
+        this.ui.setRunDisabled(true);
+        this.ui.setProtagonist('thinking');
+        setTimeout(() => this.finishCorrect(st), 800);
+      } else {
+        this.finishCorrect(st);
+      }
     } else {
       sound.error(); vibrate([20,50,20]);
       this.executionErrors++;
       const errorType = classifyConceptError(built, st);
       if(errorType) this.errorTypes[errorType]++;
-      this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
-      this.ui.showRetryButton();
+      if(this.stage === 0) this.handleCh1Fail(st);
+      else {
+        this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
+        this.ui.showRetryButton();
+      }
     }
+  }
+
+  // ---- 正解演出（CH1では0.8秒の沈黙後に呼ばれる。他章は即時） ----
+  finishCorrect(st){
+    sound.success(); vibrate([15,40,15,40,60]);
+    this.playVictory();
+    const bonus = this.timeLeft * 2;
+    const predictOk = this.predicted === st.resultSet.rows.length;
+    const clearType = clearTypeForAssist(this.assistLevel);
+    const fullGain = 100 + bonus + (predictOk ? 30 : 0);
+    const gain = clearType === 'MASTERED' ? fullGain :
+      (clearType === 'ASSISTED' ? Math.round(fullGain / 2) : 0);
+    this.xp += gain;
+    this.cleared[this.stage] = true;
+    this.recordMastery(clearType);
+    this.saveProgress();
+    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    const feedback = {
+      MASTERED: `✅ MASTERED — 自力で完全正解。+${gain} XP`,
+      ASSISTED: `✅ CLEAR — ヒント使用。+${gain} XP（MASTERED未達）`,
+      PRACTICE: '◯ PRACTICE — 模範解答を確認。XP加算なし'
+    };
+    this.ui.setFeedback(feedback[clearType], 'ok');
+    this.ui.hideRetryButton();
+    this.ui.lockPad();
+    this.ui.markSolved(this.stage === STAGES.length - 1);
+    this.ui.setRunDisabled(false);
+    if(this.stage === 0) this.ui.setProtagonist('idle');
+    this.ui.renderResultSet(st.resultSet);
+    this.ui.renderAltAnswers(st.answers);
+    if(st.reveal) this.ui.renderReveal(st.reveal);
+  }
+
+  // ---- CH1限定: 失敗回数に応じた段階ヒント ----
+  handleCh1Fail(st){
+    this.failCount[0] = (this.failCount[0] || 0) + 1;
+    const n = this.failCount[0];
+    this.ui.setProtagonist('thinking');
+    if(n === 1){
+      this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
+    } else if(n === 2){
+      this.ui.setFeedback('WHEREは行を絞る句です','ng');
+    } else if(n === 3){
+      this.ui.setFeedback('SELECT → FROM → WHERE の順で組み立てます','ng');
+    } else if(n === 4){
+      this.ui.setFeedback('❌ 不正解… 構造ヒントを確認しよう。','ng');
+      this.ui.showHint(st.hint2, '構造ヒント');
+    } else {
+      this.ui.setFeedback('❌ 不正解… 模範形を確認しよう。','ng');
+      this.ui.showHint(st.answers[0], '模範解答');
+    }
+    this.ui.showRetryButton();
+  }
+
+  // ---- CH1限定: 失敗回数からStory Clearタイプを判定 ----
+  determineCh1ClearType(){
+    const n = this.failCount[0] || 0;
+    if(n <= 3) return 'INDEPENDENT';
+    if(n === 4) return 'ASSISTED';
+    return 'PRACTICE';
   }
 
   hint(){
     if(this.solved) return;
     bgm.duck(1500);
     sound.tap(); vibrate(8);
-    this.usedModel = true;
-    this.ui.showHint(STAGES[this.stage].answers[0]);
-    this.ui.setFeedback('💡 模範形を表示（獲得XPは25%）。','');
+    this.assistLevel = Math.min(4, this.assistLevel + 1);
+    const st = STAGES[this.stage];
+    const hints = [null, st.hint1, st.hint2, st.skeleton, st.answers[0]];
+    const labels = ['', '概念ヒント', '構造ヒント', '穴あきSQL', '完成SQL'];
+    this.ui.setAssistLevel(this.assistLevel);
+    this.ui.showHint(hints[this.assistLevel], labels[this.assistLevel]);
+    const feedback = this.assistLevel === 4
+      ? '💡 NORAの完成SQLを表示。正解時はPRACTICE（XP0）。'
+      : (this.assistLevel === 3
+        ? '💡 穴あきSQLを表示。次は完成SQL（PRACTICE・XP0）。'
+        : `💡 ${labels[this.assistLevel]}を表示。正解時はASSISTED（XP半額）。`);
+    this.ui.setFeedback(feedback, '');
   }
 
   order(){
@@ -501,9 +670,12 @@ class App {
     this.setBgm('urgent');
     sound.error(); vibrate([25,60,25]);
     this.timedOut = true;
+    if(this.stage === 0) this.ui.setProtagonist('defeated');
+    if(this.tutorialActive){ this.tutorialActive = false; this.ui.hideTutorial(); this.ui.clearTokenHighlight(); }
     this.ui.disableForTimeout();
     this.ui.setFeedback('⏰ 時間切れ… 模範形を確認して再度挑戦。','ng');
-    this.usedModel = true;
+    this.assistLevel = 4;
+    this.ui.setAssistLevel(this.assistLevel);
     this.ui.showHint(STAGES[this.stage].answers[0]);
     this.ui.showRetryButton();
   }
@@ -511,13 +683,16 @@ class App {
   load(){
     const st = STAGES[this.stage];
     this.built = [];
-    this.usedModel = false;
+    this.assistLevel = 0;
     this.solved = false;
     this.predicted = null;
     this.timedOut = false;
     this.rowPredictionRecorded = false;
+    if(this.failCount[this.stage] === undefined) this.failCount[this.stage] = 0;
+    this.ui.setProtagonist(this.stage === 0 ? 'idle' : 'hidden');
 
     this.ui.hideHint();
+    this.ui.setAssistLevel(this.assistLevel);
     this.ui.hidePredictBar();
     this.ui.hideRetryButton();
     this.ui.enableAfterTimeout();
@@ -533,10 +708,27 @@ class App {
     this.refreshMonitor();
     this.startTimer();
     this.setBgm(CHAPTER_BGM[this.stage] || 'title');
+
+    let tutorialSeen = false;
+    try { tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === 'true'; } catch(e){}
+    this.tutorialActive = this.stage === 0 && !this.cleared[0] && !tutorialSeen;
+    this.tutorialStep = -1;
+    if(this.tutorialActive){
+      this.ui.showTutorial(TUTORIAL.intro);
+      this.ui.highlightToken(TUTORIAL.steps[0].token, TUTORIAL.steps[0].kind);
+    } else {
+      this.ui.hideTutorial();
+      this.ui.clearTokenHighlight();
+    }
   }
 
   next(){
-    if(this.stage < STAGES.length - 1){ this.stage++; this.load(); }
+    if(this.stage < STAGES.length - 1){
+      const wasCh1 = this.stage === 0;
+      this.stage++;
+      if(wasCh1) this.showAuditLog(() => this.load());
+      else this.load();
+    }
     else this.showEpilogue();
   }
 
@@ -570,11 +762,25 @@ class App {
     const rp = rowPredictionStatus(this.rowPredictionAttempts, this.rowPredictionCorrect);
     const conceptErrorTotal = this.errorTypes.whereHaving + this.errorTypes.joinKey +
       this.errorTypes.grouping + this.errorTypes.selectProjection;
+    const chapters = STAGES.map((st, i) => {
+      const entry = this.mastery[chapterKey(i)];
+      return {
+        id: chapterKey(i), title: st.chapterTitle, skill: SKILL_LABELS[i],
+        completed: !!this.cleared[i],
+        clearType: entry ? entry.clearType : null,
+        assistLevel: entry ? entry.assistLevel : null,
+        statusLabel: entry ? CLEAR_TYPE_LABELS[entry.clearType] :
+          (this.cleared[i] ? '支援状況未測定' : '未クリア')
+      };
+    });
+    const masterySummary = { MASTERED: 0, ASSISTED: 0, PRACTICE: 0 };
+    chapters.forEach(ch => { if(ch.clearType) masterySummary[ch.clearType]++; });
     return {
       date: new Date().toISOString().slice(0, 10),
       clearedCount: this.cleared.filter(Boolean).length,
       totalStages: STAGES.length,
-      mastered: SKILL_LABELS.filter((_, i) => this.cleared[i]),
+      chapters, masterySummary,
+      mastered: chapters.filter(ch => ch.clearType === 'MASTERED').map(ch => ch.skill),
       rowPrediction: { attempts: this.rowPredictionAttempts, correct: this.rowPredictionCorrect, status: rp },
       editCount: this.editCount,
       executionErrors: this.executionErrors,
@@ -613,6 +819,8 @@ class App {
     this.rowPredictionAttempts = 0;
     this.rowPredictionCorrect = 0;
     this.examStatus = null;
+    this.failCount = {};
+    this.clearTypes = new Array(STAGES.length).fill(null);
     this.saveProgress();
     this.ui.hideResult();
     this.load();

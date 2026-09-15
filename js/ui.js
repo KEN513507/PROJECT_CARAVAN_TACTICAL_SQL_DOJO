@@ -1,5 +1,5 @@
 // js/ui.js
-import { TABLES } from './data.js';
+import { TABLES } from './data.js?v=20260915-sprint2';
 
 const $ = id => document.getElementById(id);
 
@@ -27,6 +27,7 @@ export class UIManager {
         <div id="missionLevel"></div>
         <div id="missionText"></div>
       </section>
+      <div id="tutorialPanel"></div>
       <section id="monitorWrap">
         <div id="monitor"></div>
         <div id="hintLine"></div>
@@ -48,7 +49,7 @@ export class UIManager {
       </div>
       <div id="tokenPad"></div>
       <div id="actionBar">
-        <button id="hintBtn" class="act act-hint">💡 模範形</button>
+        <button id="hintBtn" class="act act-hint">💡 ヒントを見る</button>
         <button id="orderBtn" class="act act-order">🔍 評価順</button>
         <button id="runBtn" class="act act-run">▶ 実行 &amp; 検証</button>
       </div>
@@ -74,7 +75,13 @@ export class UIManager {
         <div id="resultScroll">
           <div class="result-badge">🎓</div>
           <h2>MASTERY REPORT</h2>
-          <p class="result-sub">報酬ではなく、学習の証明。</p>
+          <p class="result-sub">支援状況を含む、照会の学習記録。</p>
+
+          <section class="report-block">
+            <h3 class="report-title">📋 CHAPTER RESULTS（最新のクリア記録）</h3>
+            <ul id="chapterResults" class="mastered-list"></ul>
+            <div id="masterySummary" class="row-prediction-line"></div>
+          </section>
 
           <section class="report-block">
             <h3 class="report-title">✅ WHAT YOU MASTERED</h3>
@@ -112,12 +119,12 @@ export class UIManager {
         </div>
       </div>`;
 
-    ['stageLabel','progressFill','timer','xp','schemaPanel','missionLevel','missionText',
+    ['stageLabel','progressFill','timer','xp','schemaPanel','missionLevel','missionText','tutorialPanel',
      'monitor','hintLine','resultPanel','altPanel','revealPanel','feedback','retryBtn','utilBar','tokenPad','runBtn','hintBtn','orderBtn',
      'backdrop','drawer','drawerTitle','drawerBody','drawerClose',
      'stageBackdrop','stageDrawer','stageDrawerBody','stageDrawerClose',
      'predictBar','predictChoices',
-     'result','resultScroll','masteredList','rowPredictionLine',
+     'result','resultScroll','masteredList','chapterResults','masterySummary','rowPredictionLine',
      'examSourceLabel','examQuestion','examChoices','examResultLine',
      'nextMissionText','certificateText','sessionXpLine','restartBtn',
      'storyOverlay','storyOverlayTitle','storyOverlayBody','storyContinueBtn'].forEach(k => { this.el[k] = $(k); });
@@ -226,8 +233,55 @@ export class UIManager {
     this.el.timer.classList.toggle('warn', sec <= 10);
   }
 
-  showHint(text){ this.el.hintLine.textContent = '💡 模範形 : ' + text; this.el.hintLine.classList.add('show'); }
+  setAssistLevel(level){
+    const labels = ['ヒントを見る', 'さらにヒント', '構造を見る', '穴あきSQLを見る', '模範解答'];
+    const next = ['概念ヒント', '構造ヒント', '穴あきSQL', '完成SQL（PRACTICE・XP0）', '完成SQLを再表示'];
+    this.el.hintBtn.textContent = '💡 ' + labels[level];
+    this.el.hintBtn.dataset.assistLevel = String(level);
+    this.el.hintBtn.title = '次の表示：' + next[level];
+    this.el.hintBtn.setAttribute('aria-label', labels[level] + ' — ' + this.el.hintBtn.title);
+  }
+  showHint(text, label = '完成SQL'){
+    this.el.hintLine.textContent = '💡 ' + label + ' : ' + text;
+    this.el.hintLine.classList.add('show');
+  }
   hideHint(){ this.el.hintLine.classList.remove('show'); this.el.hintLine.textContent = ''; }
+
+  // ---- チュートリアル (CHAPTER 1 初回のみ・NORAの案内) ----
+  showTutorial(text){
+    this.el.tutorialPanel.innerHTML = `<div class="tutorial-badge">🗣 NORA（案内中）</div><div class="tutorial-text">${esc(text)}</div>`;
+    this.el.tutorialPanel.classList.add('show');
+  }
+  hideTutorial(){
+    this.el.tutorialPanel.classList.remove('show');
+    this.el.tutorialPanel.innerHTML = '';
+  }
+  highlightToken(tokenText, kind){
+    this.clearTokenHighlight();
+    const safe = String(tokenText).replace(/"/g, '\\"');
+    const btn = this.el.tokenPad.querySelector(`.tok[data-token="${safe}"][data-kind="${kind}"]`);
+    if(btn) btn.classList.add('tutorial-target');
+  }
+  highlightRunButton(){
+    this.clearTokenHighlight();
+    this.el.runBtn.classList.add('tutorial-target');
+  }
+  clearTokenHighlight(){
+    this.el.tokenPad.querySelectorAll('.tutorial-target').forEach(b => b.classList.remove('tutorial-target'));
+    this.el.runBtn.classList.remove('tutorial-target');
+  }
+
+  // ---- 主人公スプライト (CH1のみ) ----
+  setProtagonist(mood){
+    const el = document.getElementById('protagonist');
+    if(!el) return;
+    if(mood === 'hidden'){ el.classList.remove('show'); return; }
+    el.setAttribute('data-mood', mood);
+    el.classList.add('show');
+  }
+
+  // ---- CH1正解後の沈黙演出用: 実行ボタンの一時無効化 ----
+  setRunDisabled(disabled){ this.el.runBtn.disabled = disabled; }
 
   lockPad(){ this.el.tokenPad.classList.add('locked'); }
   markSolved(isLast){
@@ -355,11 +409,15 @@ export class UIManager {
     this.el.revealPanel.innerHTML = '';
   }
 
-  // ---- Story Overlay (章末のみ・全画面・内部スクロール可) ----
-  showStoryOverlay(content, onContinue){
+  // ---- Story Overlay (章末・オープニングなど全画面・内部スクロール可) ----
+  showStoryOverlay(content, onContinue, buttonLabel){
     this._storyContinueCb = onContinue;
-    this.el.storyOverlayTitle.textContent = content.title;
+    this.el.storyOverlayTitle.textContent = content.title || '';
+    this.el.storyOverlayTitle.style.display = content.title ? '' : 'none';
+    this.el.storyContinueBtn.textContent = buttonLabel || '監査完了 ─ 結果を見る';
     this.el.storyOverlayBody.innerHTML = content.blocks.map(b => {
+      if(b.type === 'title') return `<div class="story-title">${esc(b.text)}</div>` +
+        (b.subtitle ? `<div class="story-subtitle">${esc(b.subtitle)}</div>` : '');
       if(b.type === 'heading') return `<div class="story-heading">${esc(b.text)}</div>`;
       if(b.type === 'dialogue') return `<div class="story-dialogue">${esc(b.text).replace(/\n/g,'<br>')}</div>`;
       if(b.type === 'terminal') return `<div class="story-terminal">${b.lines.map(l => `<div>&gt; ${esc(l)}</div>`).join('')}</div>`;
@@ -377,6 +435,14 @@ export class UIManager {
 
   // ---- Mastery Learning レポート (結果画面) ----
   showResult(report, examQuestion, certificateText){
+    const colors = { MASTERED: '#bbf7d0', ASSISTED: '#fbbf24', PRACTICE: '#cbd5e1' };
+    this.el.chapterResults.innerHTML = report.chapters.map(ch => {
+      const badge = ch.clearType || (ch.completed ? 'UNASSESSED' : 'UNCLEARED');
+      return `<li data-chapter="${esc(ch.id)}" data-clear-type="${esc(badge)}" style="color:${colors[ch.clearType] || '#94a3b8'}">
+        <strong>[${esc(badge)}]</strong> ${esc(ch.title)}<br>${esc(ch.statusLabel)}</li>`;
+    }).join('');
+    this.el.masterySummary.textContent = Object.keys(report.masterySummary)
+      .map(type => `${type}: ${report.masterySummary[type]} / ${report.totalStages}`).join(' ｜ ');
     this.el.masteredList.innerHTML = report.mastered.length
       ? report.mastered.map(m => `<li>✓ ${esc(m)}</li>`).join('')
       : '<li class="none">まだ習得スキルがありません</li>';

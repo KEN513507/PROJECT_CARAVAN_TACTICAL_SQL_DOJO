@@ -52,6 +52,15 @@ async function runViewport(browser, vp){
     await page.goto(URL, { waitUntil: 'networkidle' });
     await wait(400);
 
+    // 0. オープニング（初回のみ）を閉じる
+    const openingShown = await page.locator('#storyOverlay.show').count();
+    if(openingShown > 0){
+      const continueBtn = await page.$('#storyContinueBtn');
+      if(continueBtn) await continueBtn.click();
+      await wait(300);
+    }
+    log(vp.name, 'opening dismissed', openingShown > 0 ? 'PASS' : 'INFO', `shown=${openingShown}`);
+
     // 1. スキーマ表示
     const schemaCount = await page.locator('.schema-card').count();
     log(vp.name, 'schema visible',

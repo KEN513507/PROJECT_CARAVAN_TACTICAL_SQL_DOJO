@@ -93,6 +93,9 @@ const T = (t, k) => ({ t, k });
 export const STAGES = [
   { level: 'CHAPTER 1 / MISSION 1 : WHERE ─ 存在しない住民', time: 60,
     chapterTitle: 'CHAPTER 1　存在しない住民',
+    hint1: 'WHEREで行を絞り込む必要があります。',
+    hint2: 'RESIDENT_CACHEのstatusとlast_sectorをWHEREで調べ、2つの条件をANDで結びます。',
+    skeleton: 'SELECT ______, ______ FROM ______ WHERE ______ = \'MISSING\' AND ______ = \'S4\'',
     prompt: '「同期喪失の直前、第4セクターにいたMISSING住民を抽出してください」── status = \'MISSING\' かつ last_sector = \'S4\' の住民の resident_id と display_name を取り出すクエリを組み立てよ。',
     tables: ['RESIDENT_CACHE'],
     tokens: [
@@ -119,6 +122,9 @@ export const STAGES = [
 
   { level: 'CHAPTER 2 / MISSION 2 : GROUP BY ─ 薬の行き先', time: 60,
     chapterTitle: 'CHAPTER 2　薬の行き先',
+    hint1: '物資の集中を調べるには、宛先ごとに数量を集計する必要があります。',
+    hint2: 'SUPPLY_TRANSFER_0911をdestinationでGROUP BYし、SUM(quantity)にASで別名を付けます。',
+    skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______',
     prompt: '「どこへ、合計いくつ送られたか」── SUPPLY_TRANSFER_0911 から、宛先ごとの物資総量 SUM(quantity) AS total_quantity を求めるクエリを組み立てよ。',
     tables: ['SUPPLY_TRANSFER_0911'],
     tokens: [
@@ -143,6 +149,9 @@ export const STAGES = [
 
   { level: 'CHAPTER 3 / MISSION 3 : HAVING ─ 30人の部屋に83人', time: 60,
     chapterTitle: 'CHAPTER 3　30人の部屋に83人',
+    hint1: '30人を超えた集団を探すには、行ではなく集計後の合計人数を絞り込みます。',
+    hint2: 'EVAC_BATCH_0911をsectorでGROUP BYし、HAVINGでSUM(people)を30と比較します。',
+    skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______ HAVING SUM(______) > ______',
     prompt: '「合計人数が30人を超えたセクターを抽出してください」── EVAC_BATCH_0911 のセクターごとの移送人数を集計し、合計30人超だけを残すクエリを組み立てよ。',
     tables: ['EVAC_BATCH_0911'],
     tokens: [
@@ -169,6 +178,9 @@ export const STAGES = [
 
   { level: 'CHAPTER 4 / MISSION 4 : INNER JOIN ─ 名前を取り戻す', time: 65,
     chapterTitle: 'CHAPTER 4　名前を取り戻す',
+    hint1: '名前のないIDを特定するには、氏名の記録と行動ログを照合します。',
+    hint2: 'PERSON_INDEX AS pとACCESS_LOG AS aをcredential_idでINNER JOINし、WHEREでゲートを絞ります。',
+    skeleton: 'SELECT ______, ______, ______ FROM ______ AS p INNER JOIN ______ AS a ON p.______ = a.______ WHERE a.______ = \'S4-P6\'',
     prompt: '「結合してください」── credential_id をキーに PERSON_INDEX と ACCESS_LOG を別名(AS)付きで結合し、S4-P6 へ入った人物の氏名・ゲート・時刻を特定するクエリを組み立てよ。',
     tables: ['PERSON_INDEX', 'ACCESS_LOG'],
     tokens: [
@@ -196,6 +208,49 @@ export const STAGES = [
     reveal: { size: 'small', text: '「AYA-K」\n「如月アヤ。都市基盤局データ整合性課。31歳。事故の二時間後に職員台帳から削除」' }
   }
 ];
+
+// 起動時に一度だけ表示するオープニング（タイトル→プロローグ→NORA起動→CIVIS公式報告）。
+// storyOverlay の block レンダラーを流用する（'title' ブロックのみ追加対応）。
+export const OPENING = {
+  title: '',
+  blocks: [
+    { type: 'title', text: 'CASE 53 — NULL RAIN', subtitle: '西暦2043年　東京湾上　環状都市カナタ' },
+    { type: 'narration', text: '西暦2043年。カナタは都市OS《CIVIS》が管理していた。' },
+    { type: 'narration', text: 'その夜、あなたは第九保全局の臨時監査員として呼ばれた。' },
+    { type: 'narration', text: '三日前、都市OSは17分間だけ住民台帳との同期を失った。翌朝、53人の住民が行政上「存在しなかったこと」になっていた。' },
+    { type: 'terminal', lines: ['ARCHIVE NODE 04', 'NETWORK: ISOLATED', 'USER: TEMP-AUDITOR', 'QUERY PRIVILEGE: LEVEL 1'] },
+    { type: 'dialogue', text: '「聞こえますか。私はNORA。第4アーカイブの補助エージェントです。」' },
+    { type: 'terminal', lines: ['CIVIS OFFICIAL REPORT', 'CASUALTIES: 0', 'MISSING: 0', 'DATA INTEGRITY: RESTORED'] },
+    { type: 'dialogue', text: '「これが都市の回答です」' },
+    { type: 'dialogue', text: '「じゃあ53人は？」' },
+    { type: 'dialogue', text: '「分かりません」' },
+    { type: 'dialogue', text: '「調べられないのか？」' },
+    { type: 'dialogue', text: '「RECORD NOT FOUND は、記録がないという意味ではありません」' },
+    { type: 'dialogue', text: '「CIVISが『該当なし』と回答した、という意味です」' },
+    { type: 'dialogue', text: '「答えと、記録は、別のものです」' }
+  ]
+};
+
+// CHAPTER 1 のトークン列と1対1対応するチュートリアル台本。
+// 指示文（「〜をタップしてください」）は表示しない。トークンのハイライトのみで誘導する。
+export const TUTORIAL = {
+  intro: '「RECORD NOT FOUND は、記録がないという意味ではありません」',
+  steps: [
+    { token: 'SELECT', kind: 'clause' },
+    { token: 'resident_id', kind: 'col' },
+    { token: 'display_name', kind: 'col' },
+    { token: 'FROM', kind: 'clause' },
+    { token: 'RESIDENT_CACHE', kind: 'table' },
+    { token: 'WHERE', kind: 'clause' },
+    { token: 'status', kind: 'col' },
+    { token: '=', kind: 'op' },
+    { token: "'MISSING'", kind: 'lit' },
+    { token: 'AND', kind: 'and' },
+    { token: 'last_sector', kind: 'col' },
+    { token: '=', kind: 'op' },
+    { token: "'S4'", kind: 'lit' }
+  ]
+};
 
 // CHAPTER 4 終了 → CHAPTER 5 への「章末Story Overlay」専用コンテンツ。
 // MISSION 5 (TRANSIT_SHADOW結合) はデータが83件中3件しか確定していないため、
@@ -232,7 +287,7 @@ export const EPILOGUE = {
   ]
 };
 
-// 各STAGEクリアで習得したと見なすスキル(STAGESと同じ並び順・同じ長さ)
+// MASTEREDと判定されたSTAGEだけを習得として集計する(STAGESと同じ並び順・同じ長さ)
 export const SKILL_LABELS = [
   'WHERE filtering',
   'GROUP BY aggregation (AS alias)',
