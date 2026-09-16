@@ -26,6 +26,7 @@ export class UIManager {
       <section id="mission">
         <div id="missionLevel"></div>
         <div id="missionText"></div>
+        <div id="missionBrief"></div>
       </section>
       <div id="tutorialPanel"></div>
       <section id="monitorWrap">
@@ -49,9 +50,20 @@ export class UIManager {
       </div>
       <div id="tokenPad"></div>
       <div id="actionBar">
+        <button type="button" id="undoBtn" class="act act-undo">↶ 戻す</button>
         <button id="hintBtn" class="act act-hint">💡 ヒントを見る</button>
         <button id="orderBtn" class="act act-order">🔍 評価順</button>
         <button id="runBtn" class="act act-run">▶ 実行 &amp; 検証</button>
+      </div>
+      <div id="ch1SheetScrim"></div>
+      <div id="ch1Sheet" role="dialog" aria-modal="true">
+        <div id="ch1SheetBadge"></div>
+        <div id="ch1SheetText"></div>
+        <pre id="ch1SheetCode"></pre>
+        <div id="ch1SheetActions">
+          <button type="button" id="ch1SheetSecondary"></button>
+          <button type="button" id="ch1SheetPrimary"></button>
+        </div>
       </div>
       <div id="backdrop" class="scrim"></div>
       <div id="drawer" class="drawer-sheet">
@@ -127,7 +139,9 @@ export class UIManager {
      'result','resultScroll','masteredList','chapterResults','masterySummary','rowPredictionLine',
      'examSourceLabel','examQuestion','examChoices','examResultLine',
      'nextMissionText','certificateText','sessionXpLine','restartBtn',
-     'storyOverlay','storyOverlayTitle','storyOverlayBody','storyContinueBtn'].forEach(k => { this.el[k] = $(k); });
+     'storyOverlay','storyOverlayTitle','storyOverlayBody','storyContinueBtn',
+     'mission','missionBrief','undoBtn',
+     'ch1Sheet','ch1SheetScrim','ch1SheetBadge','ch1SheetText','ch1SheetCode','ch1SheetPrimary','ch1SheetSecondary'].forEach(k => { this.el[k] = $(k); });
 
     this._wire();
   }
@@ -151,6 +165,48 @@ export class UIManager {
     this.el.storyContinueBtn.addEventListener('click', () => {
       if(this._storyContinueCb) this._storyContinueCb();
     });
+    this.el.undoBtn.addEventListener('click', () => h.onUtil('undo'));
+    this.el.mission.addEventListener('click', () => { if(h.onMissionDetail) h.onMissionDetail(); });
+    this.el.ch1SheetPrimary.addEventListener('click', () => this._sheetAction('primary'));
+    this.el.ch1SheetSecondary.addEventListener('click', () => this._sheetAction('secondary'));
+    this.el.ch1SheetScrim.addEventListener('click', () => { if(this._sheet && this._sheet.dismissible) this.closeSheet(); });
+  }
+
+  // ---- CH1 2-Workspace レイアウト (CH2以降には適用しない) ----
+  setCh1Layout(on){
+    document.body.classList.toggle('ch1-ui', !!on);
+    if(!on){
+      delete document.body.dataset.workspace;
+      this.closeSheet();
+    }
+  }
+  setMissionBrief(text){ this.el.missionBrief.textContent = text || ''; }
+  setRunLabel(text){ this.el.runBtn.textContent = text; }
+
+  // ---- CH1 一時シート (NORA / Hint / 誤答 / 完成SQL)。通常レイアウトの高さを消費しない ----
+  openSheet({ badge = '', text = '', code = '', primary, secondary, dismissible = true }){
+    this._sheet = { primary, secondary, dismissible };
+    this.el.ch1SheetBadge.textContent = badge;
+    this.el.ch1SheetText.textContent = text;
+    this.el.ch1SheetText.hidden = !text;
+    this.el.ch1SheetCode.textContent = code;
+    this.el.ch1SheetCode.classList.toggle('show', !!code);
+    this.el.ch1SheetPrimary.textContent = primary ? primary.label : '閉じる';
+    this.el.ch1SheetSecondary.hidden = !secondary;
+    this.el.ch1SheetSecondary.textContent = secondary ? secondary.label : '';
+    this.el.ch1Sheet.classList.add('show');
+    this.el.ch1SheetScrim.classList.add('show');
+  }
+  closeSheet(){
+    this._sheet = null;
+    this.el.ch1Sheet.classList.remove('show');
+    this.el.ch1SheetScrim.classList.remove('show');
+  }
+  _sheetAction(which){
+    const sheet = this._sheet;
+    const action = sheet && sheet[which];
+    this.closeSheet();
+    if(action && action.onClick) action.onClick();
   }
 
   renderSchema(tables){

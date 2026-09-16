@@ -87,6 +87,14 @@ export class ChapterSession {
     return true;
   }
 
+  // 拒否されたdraftを(Undoのみで)修正して再提出する導線。draftが空でなければQUERY_DRAFTINGへ戻す。
+  resumeDrafting(){
+    if(this.phase !== Phase.QUERY_REJECTED) return false;
+    if(this.draft.tokens.length === 0) return false;
+    this._transition(Phase.QUERY_DRAFTING);
+    return true;
+  }
+
   clearDraft(){
     if(this.phase === Phase.QUERY_EXECUTING ||
        this.phase === Phase.EVIDENCE_REVEALED ||
@@ -156,6 +164,28 @@ export class ChapterSession {
     if(this.assistanceLevel >= 4) return false;
     this.assistanceLevel++;
     this._emit('HintRequested', { level: this.assistanceLevel });
+    return true;
+  }
+
+  // 「穴あき/構造支援」など、完成SQLではない何らかの実質的な支援が示されたことを記録する。
+  // 単調増加(高水準マーク)で、既に到達済みのレベルを下げることはない。
+  // 完成SQL相当(4)には決して到達しない — それは markFullAnswerShown() の専任。
+  markPartialAssistanceShown(){
+    if(this.phase === Phase.CHAPTER_CLEARED) return false;
+    if(this.assistanceLevel >= 4) return true; // 既に完成SQL相当なら降格させない(no-op)
+    if(this.assistanceLevel < 1) this.assistanceLevel = 1;
+    this._emit('AssistanceRevealed', { level: this.assistanceLevel, kind: 'partial' });
+    return true;
+  }
+
+  // 完成SQL(模範解答)そのものが提示された瞬間に呼ぶ。TIMEOUTや自動段階Hintの最終段など、
+  // 「何回目の失敗か」ではなく「実際に完成SQLを見せたか」を直接表明するための専用メソッド。
+  // 外部(App側)から assistanceLevel を直接代入させないためにこれを用意する。
+  markFullAnswerShown(){
+    if(this.phase === Phase.CHAPTER_CLEARED) return false;
+    if(this.assistanceLevel >= 4) return true; // 既に4ならno-op
+    this.assistanceLevel = 4;
+    this._emit('AssistanceRevealed', { level: this.assistanceLevel, kind: 'full' });
     return true;
   }
 

@@ -37,6 +37,17 @@ function clearTypeForAssist(level){
   return level === 0 ? 'MASTERED' : (level < 4 ? 'ASSISTED' : 'PRACTICE');
 }
 
+// ---- CH1限定: ChapterSession.clearType (INDEPENDENT/ASSISTED/PRACTICE) を
+// 既存のMastery表示語彙 (MASTERED/ASSISTED/PRACTICE) へ変換する。CH2以降には使わない。
+const SESSION_CLEAR_TYPE_TO_MASTERY = {
+  INDEPENDENT: 'MASTERED',
+  ASSISTED: 'ASSISTED',
+  PRACTICE: 'PRACTICE'
+};
+function mapSessionClearType(sessionClearType){
+  return SESSION_CLEAR_TYPE_TO_MASTERY[sessionClearType] || 'PRACTICE';
+}
+
 function vibrate(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
 
 // ---- 誤答の概念分類（ヒューリスティック） ----
@@ -204,7 +215,8 @@ class App {
       onCloseDrawer: () => { sound.tap(); this.ui.closeDrawer(); },
       onCloseStageDrawer: () => { sound.tap(); this.ui.closeStageDrawer(); },
       onExamAnswer:  i  => this.answerExam(i),
-      onRestart:     () => { sound.tap(); this.restart(); }
+      onRestart:     () => { sound.tap(); this.restart(); },
+      onMissionDetail: () => this.openMissionDetail()
     });
 
     this.session = new ChapterSession('CH1');
@@ -324,9 +336,11 @@ class App {
     return records;
   }
 
-  recordMastery(clearType){
+  recordMastery(clearType, assistLevel = this.assistLevel){
     // 各章の直近の正解を保存。リトライや新しい周回だけでは記録を消さない。
-    this.mastery[chapterKey(this.stage)] = { clearType, assistLevel: this.assistLevel };
+    // assistLevel は clearTypeForAssist(assistLevel) === clearType が常に成り立つ値を渡すこと
+    // (loadMastery() の自己整合性チェックがこれを前提にしている)。
+    this.mastery[chapterKey(this.stage)] = { clearType, assistLevel };
     try { localStorage.setItem(MASTERY_KEY, JSON.stringify(this.mastery)); } catch(e){}
   }
 
@@ -516,6 +530,8 @@ class App {
   run(){
     if(this.timedOut) return;
     if(this.solved){ this.next(); return; }
+    // CH1: 不正解後にUndoだけで直した draft もそのまま再実行できるようにする
+    if(this.stage === 0 && this.session.phase === Phase.QUERY_REJECTED) this.session.resumeDrafting();
     if(this.session.phase === Phase.QUERY_DRAFTING){
       sound.tap();
       this.session.submit();
@@ -605,13 +621,19 @@ class App {
     this.playVictory();
     const bonus = this.timeLeft * 2;
     const predictOk = this.predicted === st.resultSet.rows.length;
-    const clearType = clearTypeForAssist(this.assistLevel);
+    // CH1: 支援状態のSource of TruthはChapterSession.assistanceLevel/clearType。
+    // App.assistLevel (Hintボタンの表示用ミラー) は評価には使わない。
+    // CH2以降: 既存どおり clearTypeForAssist(this.assistLevel) を使用(仕様は変更しない)。
+    const clearType = this.stage === 0
+      ? mapSessionClearType(this.session.clearType)
+      : clearTypeForAssist(this.assistLevel);
+    const assistLevelForRecord = this.stage === 0 ? this.session.assistanceLevel : this.assistLevel;
     const fullGain = 100 + bonus + (predictOk ? 30 : 0);
     const gain = clearType === 'MASTERED' ? fullGain :
       (clearType === 'ASSISTED' ? Math.round(fullGain / 2) : 0);
     this.xp += gain;
     this.cleared[this.stage] = true;
-    this.recordMastery(clearType);
+    this.recordMastery(clearType, assistLevelForRecord);
     this.saveProgress();
     this.ui.setHud(this.stage, STAGES.length, this.xp);
     const feedback = {
@@ -624,7 +646,10 @@ class App {
     this.ui.lockPad();
     this.ui.markSolved(this.stage === STAGES.length - 1);
     this.ui.setRunDisabled(false);
-    if(this.stage === 0) this.ui.setProtagonist('idle');
+    if(this.stage === 0){
+      this.ui.setProtagonist('idle');
+      this.ui.setRunLabel('▶ 続ける');
+    }
     this.ui.renderResultSet(st.resultSet);
     this.ui.renderAltAnswers(st.answers);
     if(st.reveal) this.ui.renderReveal(st.reveal);
@@ -637,22 +662,40 @@ class App {
     const st = STAGES[this.stage];
     this.ui.setProtagonist('thinking');
 
+    let text, code = '';
     if(n === 1){
-      this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
+      text = '❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。';
     } else if(n === 2){
-      this.ui.setFeedback('WHEREは行を絞る句です','ng');
+      text = 'WHEREは行を絞る句です';
     } else if(n === 3){
-      this.ui.setFeedback('SELECT → FROM → WHERE の順で組み立てます','ng');
+      text = 'SELECT → FROM → WHERE の順で組み立てます';
     } else if(n === 4){
-      this.session.requestHint();
-      this.ui.setFeedback('❌ 不正解… 構造ヒントを確認しよう。','ng');
+      // 実際に穴あき/構造支援を見せた回だけ、Domainの支援状態をASSISTED相当へ引き上げる。
+      this.session.markPartialAssistanceShown();
+      text = '❌ 不正解… 構造ヒントを確認しよう。';
+      code = st.hint2;
       this.ui.showHint(st.hint2, '構造ヒント');
     } else {
-      this.session.requestHint();
-      this.ui.setFeedback('❌ 不正解… 模範形を確認しよう。','ng');
+      // 完成SQLを見せた回は、失敗回数に関わらずPRACTICE相当へ確定させる。
+      this.session.markFullAnswerShown();
+      text = '❌ 不正解… 模範形を確認しよう。';
+      code = st.answers[0];
       this.ui.showHint(st.answers[0], '模範解答');
     }
+    this.ui.setFeedback(text, 'ng');
     this.ui.showRetryButton();
+    this.ui.openSheet({
+      badge: `REJECTED ×${n}`, text, code,
+      primary: { label: '修正する' },
+      secondary: { label: '全消去', onClick: () => this.retryStage() }
+    });
+  }
+
+  // ---- CH1: 1行Missionの詳細はシートで一時表示 ----
+  openMissionDetail(){
+    if(this.stage !== 0) return;
+    sound.tap();
+    this.ui.openSheet({ badge: 'MISSION', text: STAGES[0].prompt, primary: { label: '閉じる' } });
   }
 
   hint(){
@@ -660,6 +703,10 @@ class App {
     bgm.duck(1500);
     sound.tap(); vibrate(8);
     this.assistLevel = Math.min(4, this.assistLevel + 1);
+    // CH1: 手動Hintも必ずDomain側(ChapterSession.assistanceLevel)を更新する。
+    // App.assistLevel はUI表示(ボタン文言・ヒント内容の添字)用のミラーとしてのみ残し、
+    // CH1の評価判定には使わない(Source of TruthはChapterSession側)。
+    if(this.stage === 0) this.session.requestHint();
     const st = STAGES[this.stage];
     const hints = [null, st.hint1, st.hint2, st.skeleton, st.answers[0]];
     const labels = ['', '概念ヒント', '構造ヒント', '穴あきSQL', '完成SQL'];
@@ -671,6 +718,17 @@ class App {
         ? '💡 穴あきSQLを表示。次は完成SQL（PRACTICE・XP0）。'
         : `💡 ${labels[this.assistLevel]}を表示。正解時はASSISTED（XP半額）。`);
     this.ui.setFeedback(feedback, '');
+    if(this.stage === 0){
+      const level = this.assistLevel;
+      const isSql = level >= 3;
+      this.ui.openSheet({
+        badge: `💡 ${labels[level]}`,
+        text: isSql ? feedback : `${hints[level]}\n\n${feedback}`,
+        code: isSql ? hints[level] : '',
+        primary: { label: '閉じる' },
+        secondary: { label: '評価順', onClick: () => this.order() }
+      });
+    }
   }
 
   order(){
@@ -720,8 +778,19 @@ class App {
     this.ui.setFeedback('⏰ 時間切れ… 模範形を確認して再度挑戦。','ng');
     this.assistLevel = 4;
     this.ui.setAssistLevel(this.assistLevel);
+    // CH1: 完成SQLを見せた瞬間にDomain側もPRACTICE相当へ確定させる(Retryしても戻らない)。
+    if(this.stage === 0) this.session.markFullAnswerShown();
     this.ui.showHint(STAGES[this.stage].answers[0]);
     this.ui.showRetryButton();
+    if(this.stage === 0){
+      this.ui.openSheet({
+        badge: '⏰ TIMEOUT',
+        text: '時間切れ。模範形を確認して再度挑戦。（このクリアはPRACTICE扱い）',
+        code: STAGES[0].answers[0],
+        primary: { label: 'やり直す', onClick: () => this.retryStage() },
+        dismissible: false
+      });
+    }
   }
 
   load(){
@@ -739,6 +808,12 @@ class App {
     this.timedOut = false;
     this.rowPredictionRecorded = false;
     this.ui.setProtagonist(this.stage === 0 ? 'idle' : 'hidden');
+    this.ui.closeSheet();
+    this.ui.setCh1Layout(this.stage === 0);
+    if(this.stage === 0){
+      document.body.dataset.workspace = WORKSPACE_BY_PHASE[this.session.phase] || 'inspect';
+      this.ui.setMissionBrief(st.brief);
+    }
 
     this.ui.hideHint();
     this.ui.setAssistLevel(this.assistLevel);
@@ -765,6 +840,7 @@ class App {
     if(this.tutorialActive){
       this.ui.showTutorial(TUTORIAL.intro);
       this.ui.highlightToken(TUTORIAL.steps[0].token, TUTORIAL.steps[0].kind);
+      this.ui.openSheet({ badge: '🗣 NORA', text: TUTORIAL.intro, primary: { label: '調査開始' } });
     } else {
       this.ui.hideTutorial();
       this.ui.clearTokenHighlight();

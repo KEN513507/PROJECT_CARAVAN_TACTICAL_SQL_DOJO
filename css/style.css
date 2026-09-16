@@ -931,7 +931,7 @@ table.resultset td{ color:#cbd5e1; }
   transform: translateX(-50%);
   width: min(72vw, 340px);
   aspect-ratio: 1/1;
-  background-image: url('assets/characters/protagonist.png');
+  background-image: url('../assets/characters/protagonist.png');
   background-size: 200% 200%;
   background-repeat: no-repeat;
   pointer-events: none;
@@ -983,4 +983,178 @@ table.resultset td{ color:#cbd5e1; }
     position: fixed;
     bottom: calc(50% - 466px + 8px);
   }
+}
+
+/* ============================================================
+   CH1 2-WORKSPACE UI (body.ch1-ui のみ。CH2以降には一切適用しない)
+   QUERY    : HUD / 1行Mission / Schema / SQL Monitor / Token Pad / Action
+   EVIDENCE : SQL Monitor / Result / 評価 / NORA LOG / 続ける
+   Prediction・Hint・NORA・誤答・完成SQLは通常レイアウトの高さを消費しない一時Overlay
+   ============================================================ */
+#undoBtn, #missionBrief, #ch1Sheet, #ch1SheetScrim{ display:none; }
+
+body.ch1-ui #app{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  overflow:hidden;
+}
+body.ch1-ui #hud{ order:0; flex:0 0 auto; }
+
+/* ---- 1行Mission (タップで詳細シート) ---- */
+body.ch1-ui #mission{
+  order:1; flex:0 0 auto;
+  display:flex; align-items:center; gap:8px;
+  min-height:36px; padding:4px 10px;
+  cursor:pointer;
+}
+body.ch1-ui #missionLevel, body.ch1-ui #missionText{ display:none; }
+body.ch1-ui #missionBrief{
+  display:block; flex:1 1 auto; min-width:0;
+  font-size:13px; font-weight:700; color:#e2e8f0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+body.ch1-ui #mission::after{
+  content:'ⓘ 詳細'; flex:0 0 auto;
+  font-size:11px; font-weight:800; color:var(--cyan);
+}
+
+/* ---- Schema: CH1の7行が全部読める ---- */
+body.ch1-ui #schemaPanel{ order:2; flex:0 0 auto; }
+body.ch1-ui .schema-card{ padding:5px 7px; }
+body.ch1-ui .schema-card h4{ font-size:11px; margin-bottom:3px; }
+body.ch1-ui table.mini th, body.ch1-ui table.mini td{ font-size:11px; line-height:1.3; padding:1px 4px; }
+
+/* ---- SQL Monitor ---- */
+body.ch1-ui #monitorWrap{ order:3; flex:0 0 auto; min-height:0; overflow:visible; }
+body.ch1-ui #monitor{ flex:0 0 auto; height:72px; font-size:13px; line-height:1.45; }
+
+/* ---- Token Pad: 残り全部。カテゴリ見出しなし、44px以上のボタン ---- */
+body.ch1-ui #tokenPad{
+  order:4; flex:1 1 auto; min-height:0;
+  overflow-y:auto;
+  flex-direction:row; flex-wrap:wrap; align-content:flex-start;
+  gap:8px; padding:8px;
+}
+body.ch1-ui .token-group, body.ch1-ui .token-row{ display:contents; }
+body.ch1-ui .group-label{ display:none; }
+body.ch1-ui .tok{ min-height:44px; padding:0 14px; font-size:14px; }
+
+/* ---- Action: Undo / Hint / 実行 ---- */
+body.ch1-ui #actionBar{ order:9; flex:0 0 auto; gap:6px; }
+body.ch1-ui .act{ height:52px; font-size:13px; }
+body.ch1-ui #undoBtn{ display:flex; flex:0 0 22%; background:#111827; color:#cbd5e1; border-color:#334155; }
+body.ch1-ui .act-hint{ flex:0 0 26%; }
+body.ch1-ui #orderBtn{ display:none; }
+
+/* ---- 常駐させないもの ---- */
+body.ch1-ui #tutorialPanel,
+body.ch1-ui #hintLine,
+body.ch1-ui #feedback,
+body.ch1-ui #retryBtn,
+body.ch1-ui #utilBar,
+body.ch1-ui #resultPanel,
+body.ch1-ui #altPanel,
+body.ch1-ui #revealPanel{ display:none; }
+
+/* ---- EVIDENCE WORKSPACE: 入力UIを消して結果に画面を譲る ---- */
+body.ch1-ui[data-workspace="evidence"] #mission,
+body.ch1-ui[data-workspace="story"] #mission,
+body.ch1-ui[data-workspace="evidence"] #schemaPanel,
+body.ch1-ui[data-workspace="story"] #schemaPanel,
+body.ch1-ui[data-workspace="evidence"] #tokenPad,
+body.ch1-ui[data-workspace="story"] #tokenPad,
+body.ch1-ui[data-workspace="evidence"] #undoBtn,
+body.ch1-ui[data-workspace="story"] #undoBtn,
+body.ch1-ui[data-workspace="evidence"] #hintBtn,
+body.ch1-ui[data-workspace="story"] #hintBtn{ display:none; }
+
+body.ch1-ui[data-workspace="evidence"] #monitor,
+body.ch1-ui[data-workspace="story"] #monitor{ height:auto; max-height:120px; }
+
+body.ch1-ui[data-workspace="evidence"] #resultPanel.show,
+body.ch1-ui[data-workspace="story"] #resultPanel.show{
+  display:block; order:4; flex:1 1 auto; min-height:0;
+  overflow-y:auto; padding:10px; margin:0;
+}
+body.ch1-ui[data-workspace="evidence"] .panel-title,
+body.ch1-ui[data-workspace="story"] .panel-title{ font-size:11px; margin-bottom:6px; }
+body.ch1-ui[data-workspace="evidence"] table.resultset th,
+body.ch1-ui[data-workspace="evidence"] table.resultset td,
+body.ch1-ui[data-workspace="story"] table.resultset th,
+body.ch1-ui[data-workspace="story"] table.resultset td{ font-size:16px; line-height:1.4; padding:10px 8px; }
+
+body.ch1-ui[data-workspace="story"] #feedback{ display:block; order:5; font-size:13px; }
+body.ch1-ui[data-workspace="story"] #revealPanel.show{
+  display:block; order:6; flex:0 0 auto; margin:0;
+  font-size:13px; max-height:24vh;
+}
+
+/* ---- Prediction Overlay: viewport固定。Gridの1行にしない ---- */
+body.ch1-ui #predictBar{ display:none !important; }
+body.ch1-ui #predictBar.show{
+  display:flex !important;
+  position:fixed; inset:0; z-index:70;
+  flex-direction:column; justify-content:flex-end; align-items:center;
+  max-height:none; overflow:visible; opacity:1;
+  margin:0; border:none; border-radius:0;
+  padding:16px 12px calc(env(safe-area-inset-bottom,0px) + 16px);
+  background:rgba(2,6,23,.78);
+}
+body.ch1-ui .predict-bar-title,
+body.ch1-ui #predictChoices{
+  width:100%; max-width:430px;
+  background:#0b1220; border:1px solid #1e293b;
+}
+body.ch1-ui .predict-bar-title{
+  margin:0; padding:18px 16px 10px;
+  border-bottom:none; border-radius:14px 14px 0 0;
+  font-size:16px; letter-spacing:0; color:#e2e8f0; text-align:center;
+}
+body.ch1-ui #predictChoices{
+  gap:10px; padding:8px 16px 20px;
+  border-top:none; border-radius:0 0 14px 14px;
+}
+body.ch1-ui .predict-btn{ height:60px; font-size:20px; }
+
+/* ---- CH1 一時シート (NORA / Hint / 誤答 / 完成SQL / Mission詳細) ---- */
+#ch1SheetScrim.show{
+  display:block; position:fixed; inset:0; z-index:64;
+  background:rgba(2,6,23,.72);
+}
+#ch1Sheet.show{
+  display:flex; flex-direction:column; gap:10px;
+  position:fixed; left:0; right:0; bottom:0; z-index:65;
+  width:100%; max-width:430px; max-height:80dvh; margin:0 auto;
+  overflow-y:auto;
+  background:#0b1220; border:1px solid #1e293b; border-bottom:none;
+  border-radius:16px 16px 0 0;
+  padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+  box-shadow:0 -12px 40px rgba(0,0,0,.6);
+}
+#ch1SheetBadge{ font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--cyan); }
+#ch1SheetText{ font-size:15px; line-height:1.6; color:#e2e8f0; white-space:pre-wrap; }
+#ch1SheetText[hidden]{ display:none; }
+#ch1SheetCode{
+  display:none; margin:0;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:13px; line-height:1.5; color:var(--amber);
+  background:#1c1408; border:1px solid #78350f; border-radius:8px;
+  padding:10px; white-space:pre-wrap; word-break:break-all;
+}
+#ch1SheetCode.show{ display:block; }
+#ch1SheetActions{ display:flex; gap:8px; }
+#ch1SheetActions button{
+  flex:1 1 0; min-height:48px;
+  border-radius:10px; border:1px solid #334155;
+  background:#111827; color:#e2e8f0;
+  font-size:14px; font-weight:800; cursor:pointer;
+}
+#ch1SheetActions button[hidden]{ display:none; }
+#ch1SheetPrimary{ background:linear-gradient(180deg,#0891b2,#0e7490) !important; border-color:#22d3ee !important; color:#ecfeff !important; }
+
+/* PC枠(430×932)内に一時Overlayを収める */
+@media (min-width:768px){
+  #ch1Sheet.show{ bottom:calc((100dvh - min(932px, 95dvh)) / 2); }
+  body.ch1-ui #predictBar.show{ padding-bottom:calc((100dvh - min(932px, 95dvh)) / 2 + 16px); }
 }

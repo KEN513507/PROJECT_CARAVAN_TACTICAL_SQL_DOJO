@@ -178,6 +178,103 @@ async function main(){
     assertEqual('[requestHint上限] assistanceLevel は 4 を超えない', s.assistanceLevel, 4);
   }
 
+  // ================= P0: CH1 assistanceLevel 二重管理の解消 =================
+  // 手動Hintの段階 (概念/構造/穴あき/完成) を模した requestHint() 連打での Clear タイプ判定。
+  {
+    const s = freshRevealed();
+    s.requestHint(); // 概念ヒント (level 1)
+    s.clear();
+    assertEqual('[P0] 概念ヒント使用(requestHint x1) → ASSISTED', s.clearType, 'ASSISTED');
+  }
+  {
+    const s = freshRevealed();
+    s.requestHint(); s.requestHint(); // 構造ヒント (level 2)
+    s.clear();
+    assertEqual('[P0] 構造ヒント使用(requestHint x2) → ASSISTED', s.clearType, 'ASSISTED');
+  }
+  {
+    const s = freshRevealed();
+    s.requestHint(); s.requestHint(); s.requestHint(); // 穴あきSQL (level 3)
+    s.clear();
+    assertEqual('[P0] 穴あきSQL使用(requestHint x3) → ASSISTED', s.clearType, 'ASSISTED');
+  }
+  {
+    const s = freshRevealed();
+    s.requestHint(); s.requestHint(); s.requestHint(); s.requestHint(); // 完成SQL (level 4)
+    s.clear();
+    assertEqual('[P0] 完成SQL使用(requestHint x4) → PRACTICE', s.clearType, 'PRACTICE');
+  }
+
+  // markPartialAssistanceShown(): 自動段階Hintの「穴あき/構造支援」相当。ASSISTED帯に留まり続ける。
+  {
+    const s = freshRevealed();
+    s.markPartialAssistanceShown();
+    s.clear();
+    assertEqual('[P0] markPartialAssistanceShown() → clear() → ASSISTED', s.clearType, 'ASSISTED');
+  }
+  {
+    const s = freshRevealed();
+    for(let i = 0; i < 10; i++) s.markPartialAssistanceShown();
+    assertEqual('[P0] markPartialAssistanceShown() を何度呼んでも assistanceLevel は4に到達しない', s.assistanceLevel < 4, true);
+  }
+
+  // markFullAnswerShown(): 完成SQL提示の専用メソッド。PRACTICEを直接確定させる。
+  {
+    const s = freshRevealed();
+    s.markFullAnswerShown();
+    s.clear();
+    assertEqual('[P0] markFullAnswerShown() → clear() → PRACTICE', s.clearType, 'PRACTICE');
+  }
+  {
+    const s = freshRevealed();
+    s.markFullAnswerShown();
+    const before = s.assistanceLevel;
+    s.markFullAnswerShown(); // 2回目はno-op
+    assertEqual('[P0] markFullAnswerShown() は既に4ならno-op', s.assistanceLevel, before);
+  }
+
+  // markFullAnswerShown() → Retry相当(clearDraft()でdraftのみ空にする) → assistanceLevelが4のまま
+  // (TIMEOUTやQUERY_REJECTEDからのRetryは QUERY_DRAFTING/QUERY_REJECTED/AWAITING_QUERY から行われ、
+  //  それらはいずれも clearDraft() でガードされないため、draftだけがリセットされる状況を再現する)
+  {
+    const s = freshDrafting();
+    s.markFullAnswerShown();
+    const cleared = s.clearDraft();
+    assertEqual('[P0] Retry(clearDraft)は成功する', cleared, true);
+    assertEqual('[P0] Retry後もassistanceLevelは4のまま(0へ戻らない)', s.assistanceLevel, 4);
+    assertEqual('[P0] Retry後はAWAITING_QUERYに戻る', s.phase, Phase.AWAITING_QUERY);
+  }
+
+  // ================= resumeDrafting (拒否後のUndo修正→再提出) =================
+  {
+    const s = freshExecuting();
+    s.reject('sql_mismatch');
+    const ok = s.resumeDrafting();
+    assertEqual('[resumeDrafting] QUERY_REJECTED(draftあり) → true', ok, true);
+    assertEqual('[resumeDrafting] QUERY_REJECTED → QUERY_DRAFTING', s.phase, Phase.QUERY_DRAFTING);
+    assertEqual('[resumeDrafting] 再開後は submit() できる', s.submit(), true);
+  }
+  {
+    const s = freshDrafting();
+    assertEqual('[resumeDrafting] QUERY_DRAFTING では false', s.resumeDrafting(), false);
+  }
+  {
+    const s = freshCleared();
+    assertEqual('[resumeDrafting] CHAPTER_CLEARED では false', s.resumeDrafting(), false);
+  }
+
+  // ================= CHAPTER_CLEARED 後は支援状態を変更できない =================
+  {
+    const s = freshCleared(0);
+    const levelBefore = s.assistanceLevel;
+    const typeBefore = s.clearType;
+    assertEqual('[P0] CHAPTER_CLEARED後のrequestHint()はfalse', s.requestHint(), false);
+    assertEqual('[P0] CHAPTER_CLEARED後のmarkPartialAssistanceShown()はfalse', s.markPartialAssistanceShown(), false);
+    assertEqual('[P0] CHAPTER_CLEARED後のmarkFullAnswerShown()はfalse', s.markFullAnswerShown(), false);
+    assertEqual('[P0] CHAPTER_CLEARED後もassistanceLevelは不変', s.assistanceLevel, levelBefore);
+    assertEqual('[P0] CHAPTER_CLEARED後もclearTypeは不変', s.clearType, typeBefore);
+  }
+
   console.log('');
   console.log(`FAIL_COUNT: ${failCount}`);
   process.exit(failCount === 0 ? 0 : 1);

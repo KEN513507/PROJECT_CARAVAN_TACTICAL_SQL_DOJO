@@ -93,6 +93,7 @@ const T = (t, k) => ({ t, k });
 export const STAGES = [
   { level: 'CHAPTER 1 / MISSION 1 : WHERE ─ 存在しない住民', time: 60,
     chapterTitle: 'CHAPTER 1　存在しない住民',
+    brief: 'S4でMISSINGだった住民のIDと名前',
     hint1: 'WHEREで行を絞り込む必要があります。',
     hint2: 'RESIDENT_CACHEのstatusとlast_sectorをWHEREで調べ、2つの条件をANDで結びます。',
     skeleton: 'SELECT ______, ______ FROM ______ WHERE ______ = \'MISSING\' AND ______ = \'S4\'',
