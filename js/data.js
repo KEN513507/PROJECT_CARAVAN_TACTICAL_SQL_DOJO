@@ -97,7 +97,8 @@ export const STAGES = [
     hint1: 'WHEREで行を絞り込む必要があります。',
     hint2: 'RESIDENT_CACHEのstatusとlast_sectorをWHEREで調べ、2つの条件をANDで結びます。',
     skeleton: 'SELECT ______, ______ FROM ______ WHERE ______ = \'MISSING\' AND ______ = \'S4\'',
-    prompt: '「同期喪失の直前、第4セクターにいたMISSING住民を抽出してください」── status = \'MISSING\' かつ last_sector = \'S4\' の住民の resident_id と display_name を取り出すクエリを組み立てよ。',
+    prompt: '「同期喪失の直前、第4セクターにいたMISSING住民を抽出してください」── 該当する住民の resident_id と display_name を特定する。',
+    note: 'RESIDENT_CACHE は住民ごとに1行で、status（ACTIVE / MISSING）と last_sector を保持している。',
     tables: ['RESIDENT_CACHE'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('WHERE', 'clause'), T('AND', 'and'),
@@ -126,7 +127,8 @@ export const STAGES = [
     hint1: '物資の集中を調べるには、宛先ごとに数量を集計する必要があります。',
     hint2: 'SUPPLY_TRANSFER_0911をdestinationでGROUP BYし、SUM(quantity)にASで別名を付けます。',
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______',
-    prompt: '「どこへ、合計いくつ送られたか」── SUPPLY_TRANSFER_0911 から、宛先ごとの物資総量 SUM(quantity) AS total_quantity を求めるクエリを組み立てよ。',
+    prompt: '「どこへ、合計いくつ送られたか」── 宛先ごとの物資の総量を、列名 total_quantity として求める。',
+    note: 'SUPPLY_TRANSFER_0911 は転送1件ごとに1行で、item・quantity・destination を持つ。同じ宛先への転送は複数行に分かれている。',
     tables: ['SUPPLY_TRANSFER_0911'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('AS', 'as'),
@@ -153,7 +155,8 @@ export const STAGES = [
     hint1: '30人を超えた集団を探すには、行ではなく集計後の合計人数を絞り込みます。',
     hint2: 'EVAC_BATCH_0911をsectorでGROUP BYし、HAVINGでSUM(people)を30と比較します。',
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______ HAVING SUM(______) > ______',
-    prompt: '「合計人数が30人を超えたセクターを抽出してください」── EVAC_BATCH_0911 のセクターごとの移送人数を集計し、合計30人超だけを残すクエリを組み立てよ。',
+    prompt: '「合計人数が30人を超えたセクターを抽出してください」── セクターごとの移送人数の合計を列名 total_people として求め、30人を超えたセクターだけを残す。',
+    note: 'EVAC_BATCH_0911 は移送バッチごとに1行で、sector と people を持つ。同じセクターへの移送は複数のバッチに分かれている。',
     tables: ['EVAC_BATCH_0911'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('HAVING', 'clause'), T('AS', 'as'),
@@ -182,7 +185,8 @@ export const STAGES = [
     hint1: '名前のないIDを特定するには、氏名の記録と行動ログを照合します。',
     hint2: 'PERSON_INDEX AS pとACCESS_LOG AS aをcredential_idでINNER JOINし、WHEREでゲートを絞ります。',
     skeleton: 'SELECT ______, ______, ______ FROM ______ AS p INNER JOIN ______ AS a ON p.______ = a.______ WHERE a.______ = \'S4-P6\'',
-    prompt: '「結合してください」── credential_id をキーに PERSON_INDEX と ACCESS_LOG を別名(AS)付きで結合し、S4-P6 へ入った人物の氏名・ゲート・時刻を特定するクエリを組み立てよ。',
+    prompt: '「結合してください」── S4-P6 へ入った人物の氏名・ゲート・時刻を特定する。',
+    note: 'PERSON_INDEX には氏名と credential_id がある。ACCESS_LOG には credential_id と通過記録（ゲート・時刻）があるが、氏名は無い。',
     tables: ['PERSON_INDEX', 'ACCESS_LOG'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('INNER JOIN', 'clause'), T('ON', 'clause'),
@@ -207,6 +211,18 @@ export const STAGES = [
       { k: '④ SELECT p.legal_name, a.gate, a.time', d: 'C773 = 如月アヤ = AYA-K と判明。' }
     ],
     reveal: { size: 'small', text: '「AYA-K」\n「如月アヤ。都市基盤局データ整合性課。31歳。事故の二時間後に職員台帳から削除」' }
+  },
+
+  // RELATION TASK（SQL Query Taskではない）。問題データは js/relation-task.js が持つ。
+  // 別モードではなく、破損した都市記録を復元する調査作業の一部として提示する。
+  { level: 'CHAPTER 5 / RECOVERY 1 : 記録復元 ─ 欠損した住民ID', time: 0,
+    chapterTitle: 'CHAPTER 5　欠損した住民ID',
+    interactionKind: 'RELATION_FILL',
+    relationTaskId: 'EVAC_RECEPTION_RECOVERY_01',
+    brief: 'E442の欠けたresident_idを復元する',
+    prompt: 'EVAC_RECEPTION の E442 で欠損している resident_id を、関連する記録から復元してください。',
+    tables: [],
+    tokens: []
   }
 ];
 
@@ -293,7 +309,8 @@ export const SKILL_LABELS = [
   'WHERE filtering',
   'GROUP BY aggregation (AS alias)',
   'HAVING (post-aggregation filter)',
-  'INNER JOIN with table aliases'
+  'INNER JOIN with table aliases',
+  'Relational reconstruction (表間の対応関係)'
 ];
 
 // REAL FE CHALLENGE: IPA公開の過去問(出典を保持)。

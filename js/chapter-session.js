@@ -125,6 +125,14 @@ export class ChapterSession {
     return true;
   }
 
+  // 予測モーダルをキャンセルして QUERY_DRAFTING に戻す (draftは保持したまま)。
+  cancelPrediction(){
+    if(this.phase !== Phase.AWAITING_PREDICTION) return false;
+    this._transition(Phase.QUERY_DRAFTING);
+    this._emit('PredictionCancelled', null);
+    return true;
+  }
+
   reject(reason){
     if(this.phase !== Phase.QUERY_EXECUTING) return false;
     this.rejectionCount++;

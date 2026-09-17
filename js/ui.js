@@ -21,6 +21,7 @@ export class UIManager {
         <div class="progress"><div id="progressFill"></div></div>
         <span id="timer">⏱ 60s</span>
         <span id="xp">XP 0</span>
+        <button type="button" id="noraBtn" aria-label="NORAの通信を開く">🗣</button>
       </header>
       <section id="schemaPanel"></section>
       <section id="mission">
@@ -33,12 +34,42 @@ export class UIManager {
         <div id="monitor"></div>
         <div id="hintLine"></div>
       </section>
+      <section id="relationPanel">
+        <div id="relationContext"></div>
+        <div id="relationTables"></div>
+        <div id="relationTrace"></div>
+        <div id="relationAnswer"></div>
+      </section>
+      <section id="successPanel">
+        <div id="successZones">
+          <section class="zone" id="zoneProblem">
+            <button type="button" class="zone-header" data-zone="problem">
+              <span class="zone-caret">▸</span><span class="zone-title">問題を振り返る</span>
+            </button>
+            <div class="zone-body" id="zoneProblemBody"></div>
+          </section>
+          <section class="zone" id="zoneResult">
+            <button type="button" class="zone-header" data-zone="result">
+              <span class="zone-caret">▸</span><span class="zone-title">実行結果 / EVIDENCE</span>
+            </button>
+            <div class="zone-body" id="zoneResultBody"></div>
+          </section>
+          <section class="zone" id="zoneComm">
+            <button type="button" class="zone-header" data-zone="comm">
+              <span class="zone-caret">▸</span><span class="zone-title">会話を見る</span>
+              <span class="zone-unread" id="zoneCommUnread">●</span>
+            </button>
+            <div class="zone-body" id="zoneCommBody"></div>
+          </section>
+        </div>
+      </section>
       <div id="resultPanel"></div>
       <div id="altPanel"></div>
       <div id="revealPanel"></div>
       <div id="predictBar">
         <div class="predict-bar-title">🔮 予測: 何行返る?</div>
         <div id="predictChoices"></div>
+        <button type="button" id="predictCancel">キャンセル</button>
       </div>
       <div id="feedback"></div>
       <button type="button" id="retryBtn">🔄 このステージをやり直す</button>
@@ -78,7 +109,7 @@ export class UIManager {
       <div id="stageDrawer" class="drawer-sheet">
         <div class="drawer-top">
           <div class="drawer-handle"></div>
-          <div class="drawer-title">🗺 ステージセレクト</div>
+          <div id="stageDrawerTitle" class="drawer-title">🗺 ステージセレクト</div>
         </div>
         <div id="stageDrawerBody"></div>
         <button id="stageDrawerClose" class="drawer-close">閉じる</button>
@@ -134,8 +165,11 @@ export class UIManager {
     ['stageLabel','progressFill','timer','xp','schemaPanel','missionLevel','missionText','tutorialPanel',
      'monitor','hintLine','resultPanel','altPanel','revealPanel','feedback','retryBtn','utilBar','tokenPad','runBtn','hintBtn','orderBtn',
      'backdrop','drawer','drawerTitle','drawerBody','drawerClose',
-     'stageBackdrop','stageDrawer','stageDrawerBody','stageDrawerClose',
-     'predictBar','predictChoices',
+     'stageBackdrop','stageDrawer','stageDrawerTitle','stageDrawerBody','stageDrawerClose',
+     'predictBar','predictChoices','predictCancel',
+     'relationPanel','relationContext','relationTables','relationTrace','relationAnswer','noraBtn',
+     'successPanel','successZones','zoneProblem','zoneProblemBody','zoneResult','zoneResultBody',
+     'zoneComm','zoneCommBody','zoneCommUnread',
      'result','resultScroll','masteredList','chapterResults','masterySummary','rowPredictionLine',
      'examSourceLabel','examQuestion','examChoices','examResultLine',
      'nextMissionText','certificateText','sessionXpLine','restartBtn',
@@ -167,6 +201,12 @@ export class UIManager {
     });
     this.el.undoBtn.addEventListener('click', () => h.onUtil('undo'));
     this.el.mission.addEventListener('click', () => { if(h.onMissionDetail) h.onMissionDetail(); });
+    this.el.noraBtn.addEventListener('click', () => { if(h.onNora) h.onNora(); });
+    this.el.successZones.querySelectorAll('.zone-header').forEach(b => {
+      b.addEventListener('click', () => {
+        if(h.onSuccessZone) h.onSuccessZone(b.getAttribute('data-zone'));
+      });
+    });
     this.el.ch1SheetPrimary.addEventListener('click', () => this._sheetAction('primary'));
     this.el.ch1SheetSecondary.addEventListener('click', () => this._sheetAction('secondary'));
     this.el.ch1SheetScrim.addEventListener('click', () => { if(this._sheet && this._sheet.dismissible) this.closeSheet(); });
@@ -262,7 +302,7 @@ export class UIManager {
 
   renderMonitor(built){
     if(!built.length){
-      this.el.monitor.innerHTML = '<span class="placeholder">下のトークンをタップして、クエリを組み立てよう…</span>';
+      this.el.monitor.innerHTML = '<span class="caret"></span>';
       return;
     }
     let html = '';
@@ -283,6 +323,11 @@ export class UIManager {
     this.el.stageLabel.textContent = `CASE 53 ─ CH.${stage+1}/${total}`;
     this.el.progressFill.style.width = ((stage+1)/total*100) + '%';
     this.el.xp.textContent = 'XP ' + xp;
+  }
+  // Relation Task等、制限時間を持たないステージ用
+  setTimerIdle(){
+    this.el.timer.textContent = '⏱ —';
+    this.el.timer.classList.remove('warn');
   }
   setTimer(sec){
     this.el.timer.textContent = '⏱ ' + sec + 's';
@@ -368,13 +413,15 @@ export class UIManager {
   hideRetryButton(){ this.el.retryBtn.classList.remove('show'); }
 
   // ---- ステージセレクタ ----
-  openStageDrawer(stages, currentStage, cleared, onSelect){
+  openStageDrawer(stages, currentStage, cleared, onSelect, unlockAll = false){
+    this.el.stageDrawerTitle.textContent = unlockAll ? '🗺 ステージセレクト（DEBUG: 全章選択可）' : '🗺 ステージセレクト';
     this.el.stageDrawerBody.innerHTML = stages.map((st, i) => {
       const isCleared = !!cleared[i];
       const isCurrent = i === currentStage;
-      const selectable = isCleared || isCurrent;
-      const cls = isCurrent ? 'stage-item current' : (isCleared ? 'stage-item cleared' : 'stage-item locked');
-      const icon = isCurrent ? '▶' : (isCleared ? '✅' : '🔒');
+      // DEBUG時は未クリアの章も選択できる。表示アイコンは実際の進行状態を保つ。
+      const selectable = unlockAll || isCleared || isCurrent;
+      const cls = isCurrent ? 'stage-item current' : (isCleared ? 'stage-item cleared' : (unlockAll ? 'stage-item' : 'stage-item locked'));
+      const icon = isCurrent ? '▶' : (isCleared ? '✅' : (unlockAll ? '·' : '🔒'));
       return `<button type="button" class="${cls}" data-stage="${i}"${selectable ? '' : ' disabled'}>
         <span class="stage-icon">${icon}</span><span class="stage-name">CH.${i+1} : ${esc(st.chapterTitle || st.level)}</span>
       </button>`;
@@ -390,8 +437,8 @@ export class UIManager {
     this.el.stageBackdrop.classList.remove('show');
   }
 
-  // ---- 予測バー (行数予測・インライン展開) ----
-  showPredictBar(choices, onSelect){
+  // ---- 予測バー (行数予測・オーバーレイ表示。キャンセル可能) ----
+  showPredictBar(choices, onSelect, onCancel){
     this.el.predictChoices.innerHTML = choices.map(n =>
       `<button type="button" class="predict-btn" data-rows="${n}">${n}行</button>`).join('');
     this.el.predictChoices.querySelectorAll('.predict-btn').forEach(b => {
@@ -400,12 +447,18 @@ export class UIManager {
         onSelect(parseInt(b.getAttribute('data-rows'), 10));
       }, { once:true });
     });
+    this.el.predictCancel.hidden = !onCancel;
+    this.el.predictCancel.onclick = () => {
+      this.hidePredictBar();
+      if(onCancel) onCancel();
+    };
     this.el.predictBar.style.display = 'block';
     this.el.predictBar.classList.add('show');
   }
   hidePredictBar(){
     this.el.predictBar.classList.remove('show');
     this.el.predictBar.style.display = 'none';
+    this.el.predictCancel.onclick = null;
   }
 
   // ---- タイムアウト時の操作ロック ----
@@ -418,6 +471,277 @@ export class UIManager {
   enableAfterTimeout(){
     this.el.runBtn.disabled = false;
     this.el.utilBar.querySelectorAll('.util').forEach(b => { b.disabled = false; });
+  }
+
+  // ---- RELATION TASK (RelationWorkspace) ----
+  // 候補値の三択にしない（RTP §5 の弱い形を避ける）。drag&dropもしない。
+  // 情報を同時表示せず、Presentation State で段階表示する:
+  //   target : 欠損レコードが主役
+  //   select : 照合キー + source表が主役
+  //   match  : 照合結果が主役
+  // Domain(phase / 判定)は変更しない。stateはViewModel側の派生値。
+  renderRelationTask(view){
+    const st = view.state;
+    this.el.relationPanel.setAttribute('data-relation-state', st);
+    this.el.relationPanel.setAttribute('data-relation-task', view.taskId);
+
+    // ---- Header: 1行だけ。問題文をHeaderとBodyで重複させない ----
+    this.el.relationContext.innerHTML =
+      `<div class="rq-badge">RECOVERY 1 ─ 欠損記録</div>` +
+      `<div class="rq-lead">${esc(this.relationLead(view))}</div>`;
+
+    // ---- Stage: そのStateで必要なものだけを出す ----
+    this.el.relationTables.innerHTML = this.relationStageHtml(view);
+
+    // ---- 照合パネル（match Stateのみ主役。それ以外は出さない） ----
+    this.el.relationTrace.innerHTML = st === 'match' ? this.relationMatchHtml(view) : '';
+
+    // ---- 復元値 ----
+    this.el.relationAnswer.innerHTML = this.relationAnswerHtml(view);
+
+    // ---- 配線 ----
+    this.el.relationPanel.querySelectorAll('.relation-missing').forEach(b => {
+      b.addEventListener('click', () => {
+        if(this.h.onRelationSlot) this.h.onRelationSlot(b.getAttribute('data-slot'));
+      });
+    });
+    this.el.relationPanel.querySelectorAll('.relation-source-row').forEach(tr => {
+      tr.addEventListener('click', () => {
+        if(this.h.onRelationSource) this.h.onRelationSource(tr.getAttribute('data-source'));
+      });
+    });
+    const active = this.el.relationTables.querySelector('.rq-active');
+    if(active && st !== 'target') active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  // Stateごとの指示文は1つだけ
+  relationLead(view){
+    if(view.state === 'target') return `${view.targetRowKey} の ${view.slotLabel} が欠損しています。`;
+    if(view.state === 'select') return '同じ端末・同じ時刻の認証記録を選択。';
+    if(view.state === 'done') return `${view.targetRowKey} の欠損記録を復元しました。`;
+    return view.match && view.match.allMatch
+      ? '照合が一致。復元値が確定しました。'
+      : `この記録は ${view.targetRowKey} に対応しません。`;
+  }
+
+  relationStageHtml(view){
+    const parts = [];
+    if(view.state === 'done'){
+      parts.push(this.relationReconstructedCard(view));
+      parts.push(this.relationSourceRecordCard(view));
+      return parts.join('');
+    }
+    if(view.state === 'target'){
+      parts.push(this.relationTargetCard(view, true));
+    } else {
+      // matchでは照合結果パネルが両方の値を見せるので、キーstripは重複させない
+      if(view.state === 'select') parts.push(this.relationKeyStrip(view));
+      parts.push(this.relationSourceCard(view, view.state === 'select'));
+      parts.push(this.relationTargetCard(view, false));
+    }
+    parts.push(this.relationAsideHtml(view));
+    return parts.join('');
+  }
+
+  // 復元対象レコード。targetStateでは主役、それ以降は要約に退く。
+  relationTargetCard(view, primary){
+    const fields = view.targetFields.map(f => {
+      if(f.isSlot){
+        // 復元確定値(MATCH成立後)のみセルへ入れる。MISMATCH中は「欠損」を維持する。
+        const done = view.reconstructedValue;
+        return `<div class="rq-field">
+          <span class="rq-k">${esc(f.col)}</span>
+          <button type="button" class="rq-missing relation-missing${done ? ' filled' : ''}" data-slot="${esc(f.slotId)}">${done ? esc(done) : '欠損'}</button>
+        </div>`;
+      }
+      return `<div class="rq-field"><span class="rq-k">${esc(f.col)}</span><span class="rq-v">${esc(f.value)}</span></div>`;
+    }).join('');
+    return `<div class="rq-card${primary ? ' rq-active' : ' rq-summary'}">
+      <div class="rq-card-title"><span class="rq-card-name">${esc(view.targetTable)}</span> / ${esc(view.targetRowKey)}</div>
+      ${fields}
+    </div>`;
+  }
+
+  // 照合キーは技術的な列対応を常時本文に書かず、値だけを大きく見せる
+  relationKeyStrip(view){
+    const keys = view.keyStrip.map(k =>
+      `<div class="rq-key"><span class="rq-key-v">${esc(k.value)}</span><span class="rq-key-l">${esc(k.label)}</span></div>`).join('');
+    return `<div class="rq-keys"><div class="rq-keys-title">照合キー</div><div class="rq-keys-row">${keys}</div></div>`;
+  }
+
+  relationSourceCard(view, primary){
+    const tb = view.sourceTable;
+    const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const body = tb.rows.map(r => {
+      const key = r[0];
+      const chosen = view.selectedSource === key;
+      const state = chosen ? (view.match && view.match.allMatch ? ' matched' : ' mismatched') : '';
+      const cells = r.map(v => `<td>${v === null || v === undefined ? '—' : esc(v)}</td>`).join('');
+      return `<tr class="relation-source-row${state}" data-source="${esc(key)}">${cells}</tr>`;
+    }).join('');
+    return `<div class="rq-card rq-source${primary ? ' rq-active' : ''}">
+      <div class="rq-card-title"><span class="rq-card-name">${esc(tb.name)}</span>${primary ? '<span class="rq-card-hint">対応する行をタップ</span>' : ''}</div>
+      <table class="rq-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+    </div>`;
+  }
+
+  relationMatchHtml(view){
+    const m = view.match;
+    if(!m) return '';
+    const rows = m.keys.map((k, i) => {
+      const label = view.keyStrip[i] ? view.keyStrip[i].label : k.targetCol;
+      return `<div class="rq-cmp ${k.match ? 'ok' : 'ng'}">
+        <span class="rq-cmp-l">${esc(label)}</span>
+        <span class="rq-cmp-v">${esc(k.targetValue)}</span>
+        <span class="rq-cmp-op">${k.match ? '=' : '≠'}</span>
+        <span class="rq-cmp-v">${esc(k.sourceValue)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="rq-match rq-active ${m.allMatch ? 'ok' : 'ng'}">
+      <div class="rq-verdict">${m.allMatch ? 'MATCH' : 'MISMATCH'}</div>
+      ${rows}
+    </div>`;
+  }
+
+  // 色だけで意味を表さない。状態をラベルでも示す。
+  //   PREVIEW       : source選択のみ（未確定・neutral）
+  //   RECONSTRUCTED : MATCH成立後の復元確定値（緑）
+  relationAnswerHtml(view){
+    const slot = view.slots[0];
+    const done = view.reconstructedValue;
+    const preview = view.previewValue;
+    let tag, value, cls;
+    if(done){ tag = 'RECONSTRUCTED'; value = done; cls = ' ok'; }
+    else if(preview){ tag = 'PREVIEW'; value = preview; cls = ' preview'; }
+    else { tag = slot.label; value = '—'; cls = ''; }
+    return `<div class="rq-answer${cls}">
+      <span class="rq-answer-l">${esc(tag)}</span>
+      <span class="rq-answer-v relation-slot${done ? ' filled' : ''}">${esc(value)}</span>
+    </div>`;
+  }
+
+  // ---- 成功画面: 復元された記録と、その根拠となったsource記録 ----
+  relationReconstructedCard(view){
+    const fields = view.targetFields.map(f => {
+      const val = f.isSlot ? view.reconstructedValue : f.value;
+      return `<div class="rq-field">
+        <span class="rq-k">${esc(f.col)}</span>
+        <span class="rq-v${f.isSlot ? ' rq-restored' : ''}">${esc(val)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="rq-card rq-active rq-done">
+      <div class="rq-card-title"><span class="rq-card-name">RECORD RECONSTRUCTED</span></div>
+      <div class="rq-done-sub">${esc(view.targetTable)} / ${esc(view.targetRowKey)}</div>
+      ${fields}
+    </div>`;
+  }
+
+  relationSourceRecordCard(view){
+    if(!view.sourceRow) return '';
+    const cells = view.sourceCols.map((c, i) =>
+      `<div class="rq-field"><span class="rq-k">${esc(c)}</span><span class="rq-v">${esc(view.sourceRow[i])}</span></div>`).join('');
+    return `<div class="rq-card rq-summary">
+      <div class="rq-card-title"><span class="rq-card-name">SOURCE RECORD</span></div>
+      <div class="rq-done-sub">${esc(view.sourceTable.name)}</div>
+      ${cells}
+    </div>`;
+  }
+
+  // 復元に直接必要でない表と技術的な照合ルールは折りたたみへ退避する
+  relationAsideHtml(view){
+    const canon = view.canonTable;
+    const canonRows = canon ? canon.rows.map(r =>
+      `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('') : '';
+    const canonHead = canon ? canon.cols.map(c => `<th>${esc(c)}</th>`).join('') : '';
+    const rules = view.relationRules.map(r =>
+      `<div class="rq-rule">${esc(r)}</div>`).join('');
+    return `<div class="rq-aside">
+      ${canon ? `<details class="rq-details"><summary>${esc(canon.name)} を見る</summary>
+        <table class="rq-table"><thead><tr>${canonHead}</tr></thead><tbody>${canonRows}</tbody></table></details>` : ''}
+      <details class="rq-details"><summary>照合ルール</summary>${rules}</details>
+    </div>`;
+  }
+
+  showRelationWorkspace(on){
+    this.el.relationPanel.classList.toggle('show', !!on);
+  }
+
+  hideRelationTask(){
+    this.el.relationPanel.classList.remove('show');
+    this.el.relationPanel.removeAttribute('data-relation-state');
+    this.el.relationPanel.removeAttribute('data-relation-task');
+    this.el.relationContext.innerHTML = '';
+    this.el.relationTables.innerHTML = '';
+    this.el.relationTrace.innerHTML = '';
+    this.el.relationAnswer.innerHTML = '';
+  }
+
+  // ---- 成功画面（3領域アコーディオン） ----
+  // ZONE 1 PROBLEM/SOURCE  = 何を調べたか（問題文 + 元データ）
+  // ZONE 2 RESULT/EVIDENCE = 何が返ってきたか（実行SQL + 結果 + 学習フィードバック）
+  // ZONE 3 COMMUNICATION   = そのあと誰が何を言ったか（Story Beat）
+  // 開閉はPresentation State。1つだけ開くONE-OPEN方式。
+  renderSuccess(view){
+    this.el.successPanel.classList.add('show');
+
+    // ---- ZONE 1 ----
+    const tables = view.tables.map(tb => {
+      const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
+      const body = tb.rows.map(r => '<tr>' + r.map((v, i) =>
+        `<td class="${(tb.keys || []).indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${esc(v)}</td>`).join('') + '</tr>').join('');
+      return `<div class="zone-table"><h5>${esc(tb.name)}</h5>
+        <table class="zone-grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }).join('');
+    this.el.zoneProblemBody.innerHTML =
+      `<div class="zone-mission">${esc(view.missionTitle)}</div>` +
+      `<div class="zone-problem">${esc(view.problem)}</div>` + tables;
+
+    // ---- ZONE 2 ----
+    const rs = view.result;
+    const rHead = rs.cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const rBody = rs.rows.map(r => '<tr>' + r.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('');
+    const alts = view.alternatives.length
+      ? `<div class="zone-label">別解</div>` + view.alternatives.map(a => `<div class="zone-sql alt">${esc(a)}</div>`).join('')
+      : `<div class="alt-none">この形が唯一の正解。</div>`;
+    this.el.zoneResultBody.innerHTML =
+      `<div class="zone-label">EXECUTED SQL</div><div class="zone-sql">${esc(view.executedSql)}</div>` +
+      `<div class="zone-label">RESULT</div>` +
+      `<table class="zone-grid result"><thead><tr>${rHead}</tr></thead><tbody>${rBody}</tbody></table>` +
+      alts +
+      `<div class="zone-clear ${esc(view.clearType.toLowerCase())}">` +
+        `<span class="zone-clear-type">${esc(view.clearType)}</span>` +
+        `<span class="zone-clear-note">${esc(view.clearNote)}</span></div>`;
+
+    // ---- ZONE 3 ----
+    const lines = view.dialogue.lines.map(l =>
+      `<div class="zone-line"><span class="zone-speaker">${esc(l.speaker)}</span>` +
+      `<span class="zone-say">${esc(l.text)}</span></div>`).join('');
+    const term = view.dialogue.terminal.length
+      ? `<div class="zone-terminal">${view.dialogue.terminal.map(t => `<div>&gt; ${esc(t)}</div>`).join('')}</div>`
+      : '';
+    this.el.zoneCommBody.innerHTML = (lines + term) || '<div class="alt-none">この照会に会話はありません。</div>';
+    this.el.zoneComm.classList.toggle('empty', !view.dialogue.lines.length && !view.dialogue.terminal.length);
+    this.el.zoneCommUnread.classList.toggle('show', !!view.commUnread);
+
+    // ---- 開閉（ONE-OPEN） ----
+    [['problem', this.el.zoneProblem], ['result', this.el.zoneResult], ['comm', this.el.zoneComm]]
+      .forEach(([key, el]) => {
+        const open = view.openZone === key;
+        el.classList.toggle('open', open);
+        const caret = el.querySelector('.zone-caret');
+        if(caret) caret.textContent = open ? '▼' : '▸';
+        const header = el.querySelector('.zone-header');
+        if(header) header.setAttribute('aria-expanded', String(open));
+      });
+    return this;
+  }
+
+  showSuccessWorkspace(on){ this.el.successPanel.classList.toggle('show', !!on); }
+  hideSuccess(){
+    this.el.successPanel.classList.remove('show');
+    this.el.zoneProblemBody.innerHTML = '';
+    this.el.zoneResultBody.innerHTML = '';
+    this.el.zoneCommBody.innerHTML = '';
   }
 
   // ---- 実行結果セット表示 ----

@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "productionSilenceMs": 800,
+  "testSilenceMs": 5000,
+  "viewports": {
+    "iphone-se": {
+      "width": 375,
+      "height": 667
+    },
+    "iphone-16e": {
+      "width": 393,
+      "height": 852
+    }
+  },
+  "states": {
+    "INSPECT": {
+      "phase": "AWAITING_QUERY",
+      "workspace": "query",
+      "mustBeVisible": [
+        "#schemaPanel",
+        "#monitor",
+        "#tokenPad",
+        "#runBtn"
+      ],
+      "mustBeHidden": [
+        "#resultPanel",
+        "#predictBar"
+      ],
+      "minHeight": {
+        "#tokenPad": 180
+      },
+      "minTapHeight": 44,
+      "pageScroll": false
+    },
+    "COMPOSE": {
+      "phase": "QUERY_DRAFTING",
+      "workspace": "query",
+      "mustBeVisible": [
+        "#schemaPanel",
+        "#monitor",
+        "#tokenPad",
+        "#runBtn"
+      ],
+      "mustBeHidden": [
+        "#resultPanel",
+        "#predictBar"
+      ],
+      "minHeight": {
+        "#tokenPad": 180
+      },
+      "minTapHeight": 44,
+      "pageScroll": false
+    },
+    "PREDICTION": {
+      "workspace": "query",
+      "mustBeVisible": [
+        "#predictBar"
+      ],
+      "overlayBlocksBackground": true,
+      "minTapHeight": 44
+    },
+    "EVIDENCE_SILENCE": {
+      "phase": "EVIDENCE_REVEALED",
+      "workspace": "evidence",
+      "mustBeVisible": [
+        "#resultPanel"
+      ],
+      "mustBeHidden": [
+        "#tokenPad",
+        "#utilBar"
+      ],
+      "minAreaRatio": {
+        "#resultPanel": 0.55
+      },
+      "pageScroll": false
+    },
+    "EVIDENCE_FINAL": {
+      "phase": "CHAPTER_CLEARED",
+      "workspace": "success",
+      "mustBeVisible": [
+        "#successPanel",
+        "#zoneResult",
+        "#runBtn"
+      ],
+      "mustBeHidden": [
+        "#tokenPad",
+        "#utilBar",
+        "#monitorWrap",
+        "#resultPanel",
+        "#revealPanel"
+      ],
+      "minTapHeight": 44
+    }
+  },
+  "noraLayoutShift": {
+    "maxShiftPx": 1,
+    "targets": [
+      "#schemaPanel",
+      "#monitor",
+      "#tokenPad",
+      "#actionBar"
+    ]
+  }
+}

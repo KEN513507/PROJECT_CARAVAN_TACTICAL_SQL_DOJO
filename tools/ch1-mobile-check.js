@@ -95,14 +95,22 @@ async function runViewport(browser, vp){
 
   await page.goto(URL, { waitUntil: 'networkidle' });
 
-  // 初回起動: CIVIS boot → Opening Story → NORA sheet
+  // 初回起動: CIVIS boot → Opening Story → 調査画面（セリフは自動表示しない）
   await page.waitForSelector('#storyOverlay.show', { timeout: 10000 });
   await page.click('#storyContinueBtn');
-  await page.waitForSelector('#ch1Sheet.show', { timeout: 5000 });
+  await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
   check(`${tag} CH1 レイアウト有効 (body.ch1-ui)`, await page.evaluate(() => document.body.classList.contains('ch1-ui')));
-  const noraBtn = (await tappable(page, '#ch1SheetPrimary'))[0];
-  check(`${tag} NORAシートのボタンがタップ可能`, noraBtn.onTop && noraBtn.inViewport && noraBtn.h >= 44, JSON.stringify(noraBtn));
+  check(`${tag} 起動直後にセリフを自動表示しない`, !(await page.isVisible('#ch1Sheet.show')));
+
+  // 🗣 NORA LOG: セリフはボタンからのみ開く
+  const noraBtn = (await tappable(page, '#noraBtn'))[0];
+  check(`${tag} 🗣ボタンがタップ可能`, noraBtn.onTop && noraBtn.inViewport && noraBtn.h >= 40, JSON.stringify(noraBtn));
+  await page.click('#noraBtn');
+  await page.waitForSelector('#ch1Sheet.show', { timeout: 5000 });
+  const sheetBtn = (await tappable(page, '#ch1SheetPrimary'))[0];
+  check(`${tag} NORAシートのボタンがタップ可能`, sheetBtn.onTop && sheetBtn.inViewport && sheetBtn.h >= 44, JSON.stringify(sheetBtn));
   await page.click('#ch1SheetPrimary');
+  check(`${tag} 閉じるとセリフは画面から消える`, !(await page.isVisible('#ch1Sheet.show')));
 
   // ---- QUERY WORKSPACE ----
   const q = await page.evaluate(() => {
@@ -148,19 +156,41 @@ async function runViewport(browser, vp){
   const predFixed = await page.evaluate(() => getComputedStyle(document.getElementById('predictBar')).position);
   check(`${tag} Prediction は viewport 固定 Overlay`, predFixed === 'fixed', predFixed);
   check(`${tag} page scroll なし (Prediction)`, await noPageScroll(page));
+
+  // ---- Prediction キャンセル: draft を保持したまま QUERY workspace に戻る ----
+  const cancelBtn = (await tappable(page, '#predictCancel'))[0];
+  check(`${tag} Predictionキャンセルボタンがタップ可能`, cancelBtn.onTop && cancelBtn.inViewport && cancelBtn.h >= 40, JSON.stringify(cancelBtn));
+  await page.click('#predictCancel');
+  const afterCancel = await page.evaluate(() => ({
+    predictHidden: getComputedStyle(document.getElementById('predictBar')).display === 'none',
+    workspace: document.body.dataset.workspace,
+    monitorText: document.getElementById('monitor').textContent
+  }));
+  check(`${tag} キャンセル後: Predictionが閉じる`, afterCancel.predictHidden, JSON.stringify(afterCancel));
+  check(`${tag} キャンセル後: QUERY workspaceに戻る`, afterCancel.workspace === 'compose', afterCancel.workspace);
+  check(`${tag} キャンセル後: draftが保持される`, afterCancel.monitorText.includes('S4'), afterCancel.monitorText);
+
+  // ---- 再度実行 → Prediction再表示 → 正常経路へ ----
+  await page.click('#runBtn');
+  await page.waitForSelector('#predictBar.show', { timeout: 5000 });
   await page.click('.predict-btn[data-rows="3"]');
 
   // ---- EVIDENCE WORKSPACE (沈黙0.8秒の後) ----
-  await page.waitForFunction(() => document.body.dataset.workspace === 'story', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.body.dataset.workspace === 'success', null, { timeout: 5000 });
   await page.waitForTimeout(300);
   const ev = await page.evaluate(() => {
     const vis = id => { const e = document.getElementById(id); return e && getComputedStyle(e).display !== 'none'; };
-    const rows = [...document.querySelectorAll('#resultPanel table.resultset tbody tr')].map(tr => tr.textContent.trim());
-    return { tokenPadHidden: !vis('tokenPad'), schemaHidden: !vis('schemaPanel'), hintHidden: !vis('hintBtn'), resultShown: vis('resultPanel'), rows, run: document.getElementById('runBtn').textContent, feedback: document.getElementById('feedback').textContent };
+    const rows = [...document.querySelectorAll('#zoneResultBody table.result tbody tr')].map(tr => tr.textContent.trim());
+    const zoneRows = [...document.querySelectorAll('#zoneResultBody table.result tbody tr')].map(tr => tr.textContent.trim());
+    return { tokenPadHidden: !vis('tokenPad'), schemaHidden: !vis('schemaPanel'), hintHidden: !vis('hintBtn'),
+      resultShown: vis('successPanel') && vis('zoneResult'), rows: zoneRows,
+      zones: ['zoneProblem','zoneResult','zoneComm'].map(id => document.getElementById(id).classList.contains('open')),
+      run: document.getElementById('runBtn').textContent, feedback: document.getElementById('feedback').textContent };
   });
   check(`${tag} EVIDENCE: TokenPad/Schema/Hint を非表示`, ev.tokenPadHidden && ev.schemaHidden && ev.hintHidden);
-  check(`${tag} EVIDENCE: 結果セット3行を表示`, ev.resultShown && ev.rows.length === 3 && ev.rows[0].includes('R003'), JSON.stringify(ev.rows));
-  check(`${tag} EVIDENCE: 続けるボタン`, ev.run.includes('続ける'), ev.run);
+  check(`${tag} EVIDENCE: ZONE2に結果セット3行を表示`, ev.resultShown && ev.rows.length === 3 && ev.rows.join().includes('R003'), JSON.stringify(ev.rows));
+  check(`${tag} EVIDENCE: 既定はRESULTだけ開く`, ev.zones[0] === false && ev.zones[1] === true && ev.zones[2] === false, JSON.stringify(ev.zones));
+  check(`${tag} EVIDENCE: 1タップで次へ進めるボタン`, /次の照会|次へ|続ける/.test(ev.run), ev.run);
   check(`${tag} EVIDENCE: 評価表示`, /MASTERED|CLEAR|PRACTICE/.test(ev.feedback), ev.feedback);
   const contBtn = (await tappable(page, '#runBtn'))[0];
   check(`${tag} 続けるボタンがタップ可能`, contBtn.onTop && contBtn.inViewport && contBtn.h >= 44, JSON.stringify(contBtn));
@@ -202,7 +232,7 @@ async function runAssistPaths(browser, vp){
     await buildQuery(page, RIGHT);
     await page.click('#runBtn');
     await page.click('.predict-btn[data-rows="3"]');
-    await page.waitForFunction(() => document.body.dataset.workspace === 'story', null, { timeout: 5000 });
+    await page.waitForFunction(() => document.body.dataset.workspace === 'success', null, { timeout: 5000 });
     return page.textContent('#feedback');
   }
 
@@ -245,7 +275,7 @@ async function runTimeout(browser, vp){
   await buildQuery(page, RIGHT);
   await page.click('#runBtn');
   await page.click('.predict-btn[data-rows="3"]');
-  await page.waitForFunction(() => document.body.dataset.workspace === 'story', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.body.dataset.workspace === 'success', null, { timeout: 5000 });
   const fb = await page.textContent('#feedback');
   check(`${tag} TIMEOUT→Retry→正解 は PRACTICE`, fb.includes('PRACTICE'), fb);
   await ctx.close();

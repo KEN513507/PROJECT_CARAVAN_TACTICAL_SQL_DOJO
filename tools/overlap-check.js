@@ -121,6 +121,11 @@ async function checkViewport(browser, viewport) {
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   const page = await context.newPage();
   try {
+    // Opening story / tutorial は既知の待ち時間問題があるため、既視聴として事前セットしてスキップする。
+    await page.addInitScript(() => {
+      localStorage.setItem('caravan_intro_seen', 'true');
+      localStorage.setItem('caravan_tutorial_seen', 'true');
+    });
     await page.goto(URL, { waitUntil: 'networkidle' });
     await runFlow(page);
     const overlaps = await collectOverlaps(page);

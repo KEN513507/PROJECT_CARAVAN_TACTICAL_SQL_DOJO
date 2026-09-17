@@ -79,6 +79,28 @@ async function main(){
     assertEqual('[正常遷移] AWAITING_PREDICTION --submitPrediction--> QUERY_EXECUTING', s.phase, Phase.QUERY_EXECUTING);
   }
   {
+    const s = freshAwaitingPrediction();
+    const ok = s.cancelPrediction();
+    assertEqual('[正常遷移] AWAITING_PREDICTION --cancelPrediction--> QUERY_DRAFTING (戻り値)', ok, true);
+    assertEqual('[正常遷移] AWAITING_PREDICTION --cancelPrediction--> QUERY_DRAFTING (phase)', s.phase, Phase.QUERY_DRAFTING);
+  }
+  {
+    const s = freshAwaitingPrediction();
+    const tokenCountBefore = s.draft.tokens.length;
+    s.cancelPrediction();
+    assertEqual('[正常遷移] cancelPrediction後もdraftは保持される', s.draft.tokens.length, tokenCountBefore);
+  }
+  {
+    const s = freshDrafting();
+    const ok = s.cancelPrediction();
+    assertEqual('[不正遷移ガード] QUERY_DRAFTING.cancelPrediction() は false を返す', ok, false);
+  }
+  {
+    const s = freshExecuting();
+    const ok = s.cancelPrediction();
+    assertEqual('[不正遷移ガード] QUERY_EXECUTING.cancelPrediction() は false を返す', ok, false);
+  }
+  {
     const s = freshExecuting();
     s.reject('sql_mismatch');
     assertEqual('[正常遷移] QUERY_EXECUTING --reject--> QUERY_REJECTED', s.phase, Phase.QUERY_REJECTED);

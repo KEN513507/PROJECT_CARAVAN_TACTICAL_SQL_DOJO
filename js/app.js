@@ -1,8 +1,10 @@
 // js/app.js
 import { SoundEngine } from './sound.js?v=20260915-sprint2';
 import { BgmEngine } from './bgm.js?v=20260915-sprint2';
-import { STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260915-sprint2';
-import { judge } from './validator.js';
+import { TABLES, STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260915-sprint2';
+import { judgeByResult } from './sql-engine.js?v=20260917-fe-rtp';
+import { getRelationTask, buildRelationTables, RelationTaskSession, RelationPhase, evaluateRelation }
+  from './relation-task.js?v=20260917-relation01';
 import { UIManager } from './ui.js?v=20260915-sprint2';
 import { ChapterSession, Phase } from './chapter-session.js?v=20260915-sprint2';
 
@@ -26,6 +28,10 @@ const MUTE_KEY = 'caravan_muted';
 const INTRO_KEY = 'caravan_intro_seen';
 const TUTORIAL_KEY = 'caravan_tutorial_seen';
 const ROW_PREDICTION_MIN_SAMPLE = 8;
+
+// ---- DEBUG: ステージセレクタで全章を選択可能にする ----
+// 開発中の動作確認用。本番化するときは false に戻すだけでロック挙動へ戻る。
+const DEBUG_ALL_STAGES = true;
 
 const CLEAR_TYPE_LABELS = {
   MASTERED: '習得（自力）',
@@ -216,7 +222,11 @@ class App {
       onCloseStageDrawer: () => { sound.tap(); this.ui.closeStageDrawer(); },
       onExamAnswer:  i  => this.answerExam(i),
       onRestart:     () => { sound.tap(); this.restart(); },
-      onMissionDetail: () => this.openMissionDetail()
+      onMissionDetail: () => this.openMissionDetail(),
+      onNora:          ()    => this.openNoraLog(),
+      onSuccessZone:   z     => this.toggleSuccessZone(z),
+      onRelationSlot:   id => this.relationActivateSlot(id),
+      onRelationSource: k  => this.relationSelectSource(k)
     });
 
     this.session = new ChapterSession('CH1');
@@ -231,13 +241,51 @@ class App {
 
     this.resumeFromProgress();
     this.showCivisBoot(() => this.boot());
+
+    // ---- UX Decoder (A/B) 専用テストフック。本番では window.__NEON_TEST_CONFIG__ が
+    // 存在しないため一切有効化されない。ChapterSessionには触れず、Appの外側からのみ操作する。
+    if(window.__NEON_TEST_CONFIG__?.enabled){
+      window.__NEON_TEST__ = {
+        forceTimeout: () => {
+          this.stopTimer();
+          this.timeLeft = 0;
+          this.timeout();
+        },
+        jumpToEvidence: () => this._jumpToEvidenceForTest(),
+        getPhase: () => document.body.dataset.phase,
+        getWorkspace: () => document.body.dataset.workspace
+      };
+    }
+  }
+
+  // ---- UX Decoder B (契約監査) 専用: CH1の正解クエリを直接投入して EVIDENCE へジャンプする。
+  // tapToken() を通すのは、実プレイと同じくカンマ自動挿入を経由させて正しいSQLを生成するため
+  // (ChapterSession.addToken を直接叩くと自動カンマが入らず不正解判定になってしまう)。
+  _jumpToEvidenceForTest(){
+    const st = STAGES[0];
+    const order = ['SELECT', 'resident_id', 'display_name', 'FROM', 'RESIDENT_CACHE',
+      'WHERE', 'status', '=', "'MISSING'", 'AND', 'last_sector', '=', "'S4'"];
+    order.forEach(text => {
+      const tok = st.tokens.find(x => x.t === text);
+      if(tok) this.tapToken(tok.t, tok.k);
+    });
+    this.session.submit();
+    this.session.submitPrediction(3);
+    this.executeRun();
   }
 
   // ---- Domainイベント → Presentation効果 (workspace切替・進捗保存) ----
   _bindSession(session){
     session.on('PhaseChanged', ({ to }) => {
+      // UX Decoder (tools/ux-decoder-*.mjs) 専用の観測値。CSSからは参照しないこと。
+      document.body.dataset.phase = to;
       if(this.stage === 0){
-        document.body.dataset.workspace = WORKSPACE_BY_PHASE[to] || 'inspect';
+        document.body.dataset.workspace = WORKSPACE_BY_PHASE[to] || 'query';
+      }
+      // UX Decoder A (遷移監査) 専用の全遷移ログ。ChapterSession自体は公開しない。
+      if(window.__NEON_TEST_CONFIG__?.enabled){
+        window.__NEON_TEST_PHASE_LOG__ ??= [];
+        window.__NEON_TEST_PHASE_LOG__.push({ phase: to, t: performance.now() });
       }
     });
     session.on('EvidenceRevealed', () => {
@@ -487,6 +535,7 @@ class App {
   get built(){ return this.session.draft.tokens; }
 
   tapToken(t, k){
+    if(this.isRelationStage()) return;
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
 
@@ -513,6 +562,7 @@ class App {
   }
 
   util(a){
+    if(this.isRelationStage()) return;
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
     if(a === 'comma') this.session.addToken({ t: ',', k: 'punct' });
@@ -529,13 +579,19 @@ class App {
 
   run(){
     if(this.timedOut) return;
+    if(this.isRelationStage()){
+      if(this.solved){ this.next(); return; }
+      this.relationSubmit();
+      return;
+    }
     if(this.solved){ this.next(); return; }
     // CH1: 不正解後にUndoだけで直した draft もそのまま再実行できるようにする
     if(this.stage === 0 && this.session.phase === Phase.QUERY_REJECTED) this.session.resumeDrafting();
     if(this.session.phase === Phase.QUERY_DRAFTING){
       sound.tap();
       this.session.submit();
-      this.ui.showPredictBar(STAGES[this.stage].rowChoices, choice => this.onPredicted(choice));
+      const onCancel = this.stage === 0 ? () => this.session.cancelPrediction() : null;
+      this.ui.showPredictBar(STAGES[this.stage].rowChoices, choice => this.onPredicted(choice), onCancel);
       return;
     }
     // AWAITING_QUERY (未入力) / QUERY_REJECTED (直前の不正解のまま未編集) では何もしない。
@@ -557,12 +613,15 @@ class App {
     this.executeRun();
   }
 
-  executeRun(){
+  async executeRun(){
     if(this.solved || this.timedOut) return;
     this.ui.hidePredictBar();
     const st = STAGES[this.stage];
     const built = this.session.draft.tokens.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
-    const r = judge(built, st.answers);
+    // 実SQL実行（READ-ONLY）: 文字列一致ではなく、実データへ適用した結果で判定する。
+    // これにより想定外だが正しい別解も受理される (docs/NEON_RELAY_FE_RTP_IMPLEMENTATION_ALIGNMENT.md)。
+    const r = judgeByResult(built, st.resultSet, TABLES);
+    const computed = r.result || st.resultSet;
 
     if(r.empty){
       sound.error();
@@ -583,20 +642,25 @@ class App {
         this.ui.clearTokenHighlight();
       }
 
-      // Domain: reject ではなく evidence へ
-      this.session.recordExecution({ built, resultSet: st.resultSet, at: Date.now() });
-      this.session.revealEvidence({ rows: st.resultSet.rows, sourceQuery: built, significance: null });
+      // Domain: reject ではなく evidence へ（実行結果は実計算値を渡す）
+      this.session.recordExecution({ built, resultSet: computed, at: Date.now() });
+      this.session.revealEvidence({ rows: computed.rows, sourceQuery: built, significance: null });
+      this.lastResult = computed;
+      this.lastBuiltSql = built;
 
       if(this.stage === 0){
         // Effects (CH1限定の沈黙演出)。Domainはこの演出を知らない。
-        this.ui.renderResultSet(st.resultSet);
+        this.ui.renderResultSet(computed);
         this.ui.setFeedback('', '');
         this.ui.setRunDisabled(true);
         this.ui.setProtagonist('thinking');
-        setTimeout(() => {
-          this.session.clear();
-          this.finishCorrect(st);
-        }, 800);
+        // 本番は常に800ms固定。UX Decoderのテストモードでのみ延長できる(既定値は変えない)。
+        const silenceMs = window.__NEON_TEST_CONFIG__?.enabled
+          ? (window.__NEON_TEST_CONFIG__.evidenceSilenceMs ?? 800)
+          : 800;
+        await new Promise(r => setTimeout(r, silenceMs));
+        this.session.clear();
+        this.finishCorrect(st);
       } else {
         this.session.clear();
         this.finishCorrect(st);
@@ -606,10 +670,13 @@ class App {
       this.executionErrors++;
       const errorType = classifyConceptError(built, st);
       if(errorType) this.errorTypes[errorType]++;
-      this.session.reject('sql_mismatch');
+      this.session.reject(r.error ? 'sql_error' : 'sql_mismatch');
+      this.lastSqlError = r.error || null;
       if(this.stage === 0) this._handleReject();
       else {
-        this.ui.setFeedback('❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。','ng');
+        this.ui.setFeedback(r.error
+          ? `❌ 実行できません… ${r.error}`
+          : '❌ 不正解… FROM → WHERE → GROUP BY → HAVING → SELECT の順を思い出そう。', 'ng');
         this.ui.showRetryButton();
       }
     }
@@ -650,9 +717,65 @@ class App {
       this.ui.setProtagonist('idle');
       this.ui.setRunLabel('▶ 続ける');
     }
-    this.ui.renderResultSet(st.resultSet);
-    this.ui.renderAltAnswers(st.answers);
-    if(st.reveal) this.ui.renderReveal(st.reveal);
+    // ---- 成功画面を3領域へ再構成する（Presentationのみ。進行は既存のまま） ----
+    this.successZone = 'result';     // 成功直後は RESULT/EVIDENCE を開く
+    this.commUnread = !!st.reveal;   // 会話は任意閲覧。未読マークを出す
+    document.body.dataset.workspace = 'success';
+    this.ui.hideResultSet();
+    this.ui.hideAltAnswers();
+    this.ui.hideReveal();
+    this.ui.setRunLabel(this.stage === STAGES.length - 1 ? '▶ 次へ' : '▶ 次の照会へ');
+    this.renderSuccess(clearType, gain);
+  }
+
+  // ---- 成功画面 ----
+  successView(clearType, gain){
+    const st = STAGES[this.stage];
+    const clearNote = {
+      MASTERED: '自力で完全正解',
+      ASSISTED: 'ヒント使用（MASTERED未達）',
+      PRACTICE: '模範解答を確認 / XP加算なし'
+    };
+    return {
+      missionTitle: st.level,
+      problem: st.prompt,
+      // 2表・3表問題でも全source tableをZONE 1へ収める
+      tables: (st.tables || []).map(name => Object.assign({ name }, TABLES[name])),
+      executedSql: this.lastBuiltSql || st.answers[0],
+      result: this.lastResult || st.resultSet,
+      alternatives: (st.answers || []).slice(1),
+      clearType,
+      clearNote: clearType === 'PRACTICE' ? clearNote[clearType] : `${clearNote[clearType]} / +${gain} XP`,
+      dialogue: this.successDialogue(st),
+      commUnread: this.commUnread,
+      openZone: this.successZone
+    };
+  }
+
+  // Story Beatを話者つきの会話として渡す。本文はst.revealのまま（Story変更なし）。
+  successDialogue(st){
+    if(!st.reveal) return { lines: [], terminal: [] };
+    const lines = String(st.reveal.text || '').split(String.fromCharCode(10))
+      .map(t => t.trim()).filter(Boolean)
+      .map(t => {
+        const quoted = /^[「『]/.test(t);
+        return { speaker: quoted ? 'NORA' : '', text: t };
+      });
+    return { lines, terminal: st.reveal.terminal || [] };
+  }
+
+  renderSuccess(clearType, gain){
+    this._lastClear = { clearType, gain };
+    this.ui.renderSuccess(this.successView(clearType, gain));
+  }
+
+  toggleSuccessZone(zone){
+    if(!this._lastClear) return;
+    sound.tap(); vibrate(8);
+    // ONE-OPEN: 開いているものを閉じ、指定Zoneだけを開く
+    this.successZone = this.successZone === zone ? null : zone;
+    if(zone === 'comm' && this.successZone === 'comm') this.commUnread = false;
+    this.renderSuccess(this._lastClear.clearType, this._lastClear.gain);
   }
 
   // ---- CH1限定: Domainの rejectionCount に応じた段階ヒント ----
@@ -691,6 +814,30 @@ class App {
     });
   }
 
+  // ---- 🗣 NORA LOG: キャラクター/世界内AIのセリフはボタンでのみ表示する ----
+  // 解答中の画面には常設しない（Query workspaceの高さを消費しない一時Overlayを使う）。
+  openNoraLog(){
+    sound.tap(); vibrate(8);
+    const st = STAGES[this.stage];
+    // NORAはCONTEXT(どの表に何があるか)を話す。MISSION(prompt)は再掲しない。
+    let text;
+    if(this.isRelationStage() && this.relation){
+      const task = this.relation.task;
+      text = this.solved
+        ? `${task.storyContext}
+
+「${task.evidence.nora}」`
+        : task.storyContext;
+    } else if(this.stage === 0 && !this.cleared[0]){
+      text = `「${TUTORIAL.intro}」
+
+${st.note || ''}`.trim();
+    } else {
+      text = st.note || '';
+    }
+    this.ui.openSheet({ badge: '🗣 NORA', text, primary: { label: '閉じる' } });
+  }
+
   // ---- CH1: 1行Missionの詳細はシートで一時表示 ----
   openMissionDetail(){
     if(this.stage !== 0) return;
@@ -700,6 +847,7 @@ class App {
 
   hint(){
     if(this.solved) return;
+    if(this.isRelationStage()){ this.relationHint(); return; }
     bgm.duck(1500);
     sound.tap(); vibrate(8);
     this.assistLevel = Math.min(4, this.assistLevel + 1);
@@ -732,6 +880,7 @@ class App {
   }
 
   order(){
+    if(this.isRelationStage()) return; // 評価順ドロワーはSQL Query専用
     bgm.duck(1500);
     sound.tap(); vibrate(8);
     const st = STAGES[this.stage];
@@ -746,7 +895,7 @@ class App {
 
   openStageSelector(){
     sound.tap(); vibrate(8);
-    this.ui.openStageDrawer(STAGES, this.stage, this.cleared, i => this.selectStage(i));
+    this.ui.openStageDrawer(STAGES, this.stage, this.cleared, i => this.selectStage(i), DEBUG_ALL_STAGES);
   }
 
   selectStage(i){
@@ -769,6 +918,7 @@ class App {
   }
   stopTimer(){ if(this.timerId){ clearInterval(this.timerId); this.timerId = null; } }
   timeout(){
+    if(this.isRelationStage()) return;
     this.setBgm('urgent');
     sound.error(); vibrate([25,60,25]);
     this.timedOut = true;
@@ -793,8 +943,237 @@ class App {
     }
   }
 
+  // ================= RELATION TASK (Q1 Vertical Slice) =================
+  // SQL Query Taskとは別のInteractionだが、別モードではない。
+  // ChapterSession(Query Domain)は変更せず、RelationTaskSessionが自前のphaseを持つ。
+  isRelationStage(){
+    const st = STAGES[this.stage];
+    return !!st && st.interactionKind === 'RELATION_FILL';
+  }
+
+  loadRelationTask(){
+    const st = STAGES[this.stage];
+    const task = getRelationTask(st.relationTaskId);
+    this.relation = new RelationTaskSession(task);
+    this.relationActiveSlotId = null;   // Presentation専用状態（Domainには持たせない）
+    this.solved = false;
+    this.timedOut = false;
+    this.assistLevel = 0;
+    // 他章から跳んできた場合に前の章のカウントダウンが走り続けないようにする
+    this.stopTimer();
+    this.ui.setTimerIdle();
+
+    this.relation.on('PhaseChanged', ({ to }) => {
+      document.body.dataset.phase = to;
+      // Relation Taskの結果画面はQuery Evidenceと分離する（SQL compose UIへ戻さない）
+      document.body.dataset.workspace =
+        (to === RelationPhase.EVIDENCE_REVEALED) ? 'relation-evidence' : 'relation';
+    });
+
+    this.ui.setCh1Layout(false);
+    document.body.dataset.workspace = 'relation';
+    document.body.dataset.phase = this.relation.phase;
+    this.ui.showRelationWorkspace(true);
+    this.ui.hideSuccess();
+    this.ui.closeSheet();
+    this.ui.hideHint();
+    this.ui.hideRetryButton();
+    this.ui.hideResultSet();
+    this.ui.hideAltAnswers();
+    this.ui.hideReveal();
+    this.ui.hideTutorial();
+    this.ui.hidePredictBar();
+    this.ui.enableAfterTimeout();
+    this.ui.setProtagonist('hidden');
+    this.ui.setMission(task.level, task.prompt);
+    this.ui.renderSchema([]);
+    this.ui.renderTokens([]);
+    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.ui.setRunDisabled(false);
+    this.ui.resetRunBtn();
+    this.ui.setRunLabel('▶ 復元内容を検証');
+    this.ui.setAssistLevel(0);
+    this.ui.setFeedback('', '');
+    this.relation.beginSolving();
+    this.renderRelation();
+    this.setBgm(CHAPTER_BGM[this.stage] || 'title');
+  }
+
+  relationView(){
+    const task = this.relation.task;
+    const slot = task.slots.find(s => s.id === this.relationActiveSlotId) || task.slots[0];
+    const rel = slot.relation;
+    const tables = buildRelationTables(task, TABLES);
+
+    const targetTable = tables.find(t => t.name === slot.target.table);
+    const targetRow = targetTable.rows.find(r => r[0] === slot.target.rowKey) || [];
+    const targetFields = targetTable.cols.map((col, i) => ({
+      col,
+      value: targetRow[i],
+      isSlot: col === slot.target.col,
+      slotId: slot.id
+    }));
+
+    // 照合キーは「値」を主役にし、列の対応はラベル（短い語）で示す
+    const labelOf = col => col.replace(/_id$/, '').replace(/_at$/, '')
+      .replace('terminal', 'terminal').replace('received', 'time');
+    const keyStrip = rel.keys.map(k => ({
+      label: labelOf(k.targetCol),
+      value: targetRow[targetTable.cols.indexOf(k.targetCol)]
+    }));
+
+    // Presentation State（Domainのphaseは変更しない）
+    const selectedSource = this.relation.sources[slot.id] || null;
+    const match = this.relation.matchOf(slot.id);
+    const state = this.solved ? 'done'
+      : (selectedSource ? 'match' : (this.relationActiveSlotId ? 'select' : 'target'));
+
+    // MATCH成立前は復元確定扱いにしない。
+    // preview: 選択中sourceの値（neutral表示） / reconstructed: 確定した復元値（緑）
+    const derived = this.relation.answers[slot.id] || null;
+    const committed = !!(match && match.allMatch);
+    const reconstructedValue = committed ? derived : null;
+    const previewValue = committed ? null : derived;
+
+    return {
+      taskId: task.id,
+      state,
+      slots: task.slots,
+      slotLabel: slot.label,
+      answers: this.relation.answers,
+      activeSlotId: this.relationActiveSlotId,
+      targetTable: slot.target.table,
+      targetRowKey: slot.target.rowKey,
+      targetFields,
+      keyStrip,
+      sourceTable: tables.find(t => t.name === rel.sourceTable),
+      canonTable: tables.find(t => t.canon) || null,
+      selectedSource,
+      match,
+      previewValue,
+      reconstructedValue,
+      sourceCols: tables.find(t => t.name === rel.sourceTable).cols,
+      sourceRow: selectedSource
+        ? (tables.find(t => t.name === rel.sourceTable).rows.find(r => r[0] === selectedSource) || null)
+        : null,
+      relationRules: rel.keys.map(k =>
+        `${slot.target.table}.${k.targetCol} = ${rel.sourceTable}.${k.sourceCol}`)
+        .concat(`復元値: ${rel.sourceTable}.${rel.valueCol}`)
+    };
+  }
+
+  renderRelation(){ this.ui.renderRelationTask(this.relationView()); }
+
+  relationActivateSlot(slotId){
+    if(!this.relation || this.solved) return;
+    sound.tap(); vibrate(8);
+    this.relationActiveSlotId = this.relationActiveSlotId === slotId ? null : slotId;
+    this.renderRelation();
+    if(this.relationActiveSlotId){
+      const rel = this.relation.task.slots.find(s => s.id === slotId).relation;
+      this.ui.setFeedback(`${rel.sourceTable} から、対応する行を選ぼう。`, '');
+    }
+  }
+
+  // プレイヤーが source 表の行を選ぶ。復元値はその行から導出される（候補選択ではない）。
+  relationSelectSource(sourceRowKey){
+    if(!this.relation || this.solved) return;
+    const slotId = this.relationActiveSlotId;
+    if(!slotId) return;
+    sound.tap(); vibrate(8);
+    if(!this.relation.selectSource(slotId, sourceRowKey, TABLES)) return;
+    this.editCount++;
+    this.renderRelation();
+    const m = this.relation.matchOf(slotId);
+    if(m && m.allMatch){
+      this.ui.setFeedback(`${sourceRowKey} が対応。${m.valueCol} から復元値が決まった。`, '');
+    } else {
+      // 答えは言わない。何が一致していないかだけを示す。
+      const ng = m.keys.filter(k => !k.match).map(k => k.targetCol).join(' / ');
+      this.ui.setFeedback(`${sourceRowKey} は対応していない（${ng} が不一致）。`, 'ng');
+    }
+  }
+
+  relationSubmit(){
+    if(!this.relation || this.solved) return;
+    if(!this.relation.isComplete()){
+      sound.error();
+      this.ui.setFeedback('まだ復元できていない。欠損セルを選び、対応する行を照合しよう。', 'ng');
+      return;
+    }
+    if(this.relation.phase === RelationPhase.RELATION_REJECTED) this.relation.beginSolving();
+    if(!this.relation.submit()) return;
+
+    const r = evaluateRelation(this.relation.task, this.relation.answers);
+    if(r.ok){
+      this.solved = true;
+      this.stopTimer();
+      this.relation.clear();
+      this.relation.revealEvidence();
+      this.finishRelationCorrect();
+    } else {
+      sound.error(); vibrate([20, 50, 20]);
+      this.executionErrors++;
+      this.relation.reject('relation_mismatch');
+      // 復元対象は選択したままにする。そうしないと拒否後に行を選び直せなくなる。
+      this.renderRelation();
+      const n = this.relation.attemptCount;
+      // 「違います」で終わらせない。ただし答えも言わない。
+      const guide = n === 1
+        ? '選んだ行の照合キーが、E442 の値と一致しているか確認してください。'
+        : this.relation.task.hints[Math.min(n - 1, this.relation.task.hints.length - 1)];
+      this.ui.setFeedback(`❌ 一致しません。${guide}`, 'ng');
+      this.ui.showRetryButton();
+    }
+  }
+
+  finishRelationCorrect(){
+    sound.success(); vibrate([15, 40, 15, 40, 60]);
+    this.playVictory();
+    const clearType = this.relation.clearType === 'INDEPENDENT' ? 'MASTERED' : 'ASSISTED';
+    const gain = clearType === 'MASTERED' ? 100 : 50;
+    this.xp += gain;
+    this.cleared[this.stage] = true;
+    this.recordMastery(clearType, this.relation.assistanceLevel);
+    this.saveProgress();
+    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.relationActiveSlotId = null;
+    this.ui.hideRetryButton();
+    // Relation専用のEvidence表示（SQL monitor / token pad / utility は出さない）
+    this.ui.showRelationWorkspace(true);
+    this.renderRelation();
+    this.ui.setFeedback(clearType === 'MASTERED'
+      ? `✅ 復元完了 — 自力で対応関係を特定。+${gain} XP`
+      : `✅ 復元完了 — ヒント使用。+${gain} XP`, 'ok');
+    this.ui.markSolved(this.stage === STAGES.length - 1);
+    this.ui.setRunLabel(this.stage === STAGES.length - 1 ? '📁 記録の続きを見る' : '▶ 続ける');
+  }
+
+  relationHint(){
+    if(!this.relation || this.solved) return;
+    bgm.duck(1500);
+    sound.tap(); vibrate(8);
+    const text = this.relation.requestHint();
+    if(!text) return;
+    this.assistLevel = Math.min(4, this.relation.assistanceLevel);
+    this.ui.setAssistLevel(Math.min(4, this.relation.assistanceLevel));
+    this.ui.showHint(text, '関係のヒント');
+    this.ui.setFeedback(`💡 ヒントを表示。正解時はASSISTED（XP半額）。`, '');
+  }
+
   load(){
     const st = STAGES[this.stage];
+    if(st && st.interactionKind === 'RELATION_FILL'){
+      this.loadRelationTask();
+      return;
+    }
+    this.ui.showRelationWorkspace(false);
+    this.ui.hideRelationTask();
+    this.relation = null;
+    this.ui.hideSuccess();
+    this.successZone = null;
+    this._lastClear = null;
+    this.lastBuiltSql = null;
     // Domain: 同じ章のやり直し(retry)は draft だけ空にして継続する。
     // CHAPTER_CLEARED から先(次の章へ進む/選び直す)は clearDraft() 自体がガードで false を返すため、
     // その時だけ新しい ChapterSession を作り直す。
@@ -811,7 +1190,7 @@ class App {
     this.ui.closeSheet();
     this.ui.setCh1Layout(this.stage === 0);
     if(this.stage === 0){
-      document.body.dataset.workspace = WORKSPACE_BY_PHASE[this.session.phase] || 'inspect';
+      document.body.dataset.workspace = WORKSPACE_BY_PHASE[this.session.phase] || 'query';
       this.ui.setMissionBrief(st.brief);
     }
 
@@ -828,7 +1207,7 @@ class App {
     this.ui.renderSchema(st.tables);
     this.ui.renderTokens(st.tokens);
     this.ui.setHud(this.stage, STAGES.length, this.xp);
-    this.ui.setFeedback('トークンをタップして、正しい順序でクエリを組み立てよう。','');
+    this.ui.setFeedback('', '');
     this.refreshMonitor();
     this.startTimer();
     this.setBgm(CHAPTER_BGM[this.stage] || 'title');
@@ -838,9 +1217,9 @@ class App {
     this.tutorialActive = this.stage === 0 && !this.cleared[0] && !tutorialSeen;
     this.tutorialStep = -1;
     if(this.tutorialActive){
-      this.ui.showTutorial(TUTORIAL.intro);
+      // セリフは画面に常設しない。🗣ボタンから任意で読める（openNoraLog）。
+      // 誘導は指示文ではなくトークンのハイライトだけで行う。
       this.ui.highlightToken(TUTORIAL.steps[0].token, TUTORIAL.steps[0].kind);
-      this.ui.openSheet({ badge: '🗣 NORA', text: TUTORIAL.intro, primary: { label: '調査開始' } });
     } else {
       this.ui.hideTutorial();
       this.ui.clearTokenHighlight();

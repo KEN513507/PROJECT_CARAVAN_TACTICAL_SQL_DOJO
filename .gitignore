@@ -9,4 +9,4 @@ package-lock.json
 Thumbs.db
 .DS_Store
 !assets/**/*.png
-!assets/**/*.jpg
+!assets/**/*.jpgtools/ux-artifacts/

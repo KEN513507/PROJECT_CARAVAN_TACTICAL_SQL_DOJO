@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-09-17T15:51:56.330Z",
+  "a": {
+    "time": 32863,
+    "exitCode": 0,
+    "summary": {
+      "total": 76,
+      "pass": 76,
+      "fail": 0,
+      "failures": []
+    }
+  },
+  "b": {
+    "time": 19024,
+    "exitCode": 0,
+    "summary": {
+      "total": 116,
+      "pass": 116,
+      "fail": 0,
+      "failures": []
+    }
+  },
+  "union": {
+    "bothDetected": [],
+    "aOnly": [],
+    "bOnly": []
+  }
+}

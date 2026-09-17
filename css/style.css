@@ -409,6 +409,18 @@ table.resultset td{ color:#cbd5e1; }
 }
 .predict-btn:active:not(:disabled){ background:#1f2937; transform:scale(.94); filter:brightness(1.3); }
 .predict-btn:disabled{ opacity:.35; pointer-events:none; }
+#predictCancel{
+  display:block;
+  margin:8px auto 0;
+  background:none;
+  border:1px solid #334155;
+  color:#94a3b8;
+  padding:6px 16px;
+  border-radius:8px;
+  font-size:11px;
+  cursor:pointer;
+}
+#predictCancel[hidden]{ display:none; }
 
 /* ---- UTIL BAR ---- */
 #utilBar{ flex:0 0 auto; display:flex; gap:5px; }
@@ -1116,6 +1128,13 @@ body.ch1-ui #predictChoices{
   border-top:none; border-radius:0 0 14px 14px;
 }
 body.ch1-ui .predict-btn{ height:60px; font-size:20px; }
+body.ch1-ui #predictCancel{
+  width:100%; max-width:430px;
+  margin:10px auto 0;
+  height:44px;
+  border-radius:10px;
+  font-size:13px;
+}
 
 /* ---- CH1 一時シート (NORA / Hint / 誤答 / 完成SQL / Mission詳細) ---- */
 #ch1SheetScrim.show{
@@ -1158,3 +1177,388 @@ body.ch1-ui .predict-btn{ height:60px; font-size:20px; }
   #ch1Sheet.show{ bottom:calc((100dvh - min(932px, 95dvh)) / 2); }
   body.ch1-ui #predictBar.show{ padding-bottom:calc((100dvh - min(932px, 95dvh)) / 2 + 16px); }
 }
+
+/* ============================================================
+   RELATION TASK (RelationWorkspace)
+   SQL Query Taskとは別のInteraction。別モードではなく、
+   破損した都市記録を復元する調査画面として提示する。
+   ============================================================ */
+#relationPanel{ display:none; }
+#relationPanel.show{
+  display:flex; flex-direction:column; gap:6px;
+  min-height:0; overflow:hidden;
+}
+body[data-workspace="relation"] #app,
+body[data-workspace="relation-evidence"] #app{
+  display:flex; flex-direction:column; gap:6px; overflow:hidden;
+}
+/* Relation中および復元結果画面ではQuery専用UI(SQL compose)を一切出さない */
+body[data-workspace="relation"] #schemaPanel,
+body[data-workspace="relation"] #monitorWrap,
+body[data-workspace="relation"] #tokenPad,
+body[data-workspace="relation"] #utilBar,
+body[data-workspace="relation"] #orderBtn,
+body[data-workspace="relation"] #undoBtn,
+body[data-workspace="relation"] #altPanel,
+body[data-workspace="relation"] #predictBar,
+body[data-workspace="relation-evidence"] #schemaPanel,
+body[data-workspace="relation-evidence"] #monitorWrap,
+body[data-workspace="relation-evidence"] #tokenPad,
+body[data-workspace="relation-evidence"] #utilBar,
+body[data-workspace="relation-evidence"] #orderBtn,
+body[data-workspace="relation-evidence"] #undoBtn,
+body[data-workspace="relation-evidence"] #altPanel,
+body[data-workspace="relation-evidence"] #predictBar,
+body[data-workspace="relation-evidence"] #resultPanel,
+body[data-workspace="relation-evidence"] #revealPanel,
+body[data-workspace="relation-evidence"] #hintBtn{ display:none !important; }
+
+body[data-workspace="relation"] #hud,
+body[data-workspace="relation-evidence"] #hud{ flex:0 0 auto; }
+body[data-workspace="relation"] #mission,
+body[data-workspace="relation-evidence"] #mission{ display:none; }
+body[data-workspace="relation"] #relationPanel.show,
+body[data-workspace="relation-evidence"] #relationPanel.show{ flex:1 1 auto; }
+body[data-workspace="relation"] #actionBar,
+body[data-workspace="relation-evidence"] #actionBar{ flex:0 0 auto; }
+body[data-workspace="relation"] #feedback,
+body[data-workspace="relation-evidence"] #feedback{ flex:0 0 auto; }
+
+
+/* ============================================================
+   Q1 RELATION TASK の情報設計
+   すべて body[data-workspace="relation"] 配下に限定する（他章へ漏らさない）。
+   3階層: APP背景 → 補助カード(.rq-summary/.rq-details) → 主役(.rq-active)
+   文字は13px以上。重要値(E442 / R005 / T-S4-03 / 23:09)は16px以上。
+   ============================================================ */
+body[data-workspace="relation"] #mission{ display:none; } /* 問題文の二重表示を止める */
+
+#relationContext{ flex:0 0 auto; }
+.rq-badge{
+  font-size:13px; font-weight:800; letter-spacing:.06em; color:var(--cyan);
+}
+.rq-lead{
+  margin-top:3px;
+  font-size:15px; line-height:1.45; font-weight:700; color:#e2e8f0;
+}
+
+/* Stage: そのStateで必要なカードだけが入る */
+#relationTables{
+  flex:1 1 auto; min-height:0; overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  display:flex; flex-direction:column; gap:8px;
+}
+
+/* ---- LAYER 2: 補助カード ---- */
+.rq-card{
+  background:#0b1220; border:1px solid #1e293b; border-radius:10px;
+  padding:8px 10px;
+}
+.rq-card-title{
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  font-size:13px; font-weight:800; letter-spacing:.03em; color:#64748b;
+  margin-bottom:5px;
+}
+.rq-card-hint{ font-size:13px; font-weight:700; color:var(--cyan); }
+
+/* ---- LAYER 3: 主役カード ---- */
+.rq-card.rq-active{
+  background:#0f1b2e; border-color:#22d3ee;
+  box-shadow:0 0 0 1px rgba(34,211,238,.35), 0 6px 18px rgba(0,0,0,.45);
+}
+.rq-card.rq-active .rq-card-title{ color:var(--cyan); }
+.rq-card.rq-summary{ background:#080f1c; border-color:#131c2e; opacity:.85; }
+
+/* 対象レコードのフィールド */
+.rq-field{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:5px 0; border-bottom:1px solid #131c2e;
+}
+.rq-field:last-child{ border-bottom:none; }
+.rq-k{ font-size:13px; color:#64748b; font-weight:700; }
+.rq-v{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:17px; font-weight:800; color:#e2e8f0;
+}
+.rq-card.rq-summary .rq-v{ font-size:16px; color:#94a3b8; }
+
+/* 欠損セル = 最重要Tap Target */
+.rq-missing{
+  min-height:44px; min-width:110px;
+  border-radius:9px; border:1px dashed #b91c1c;
+  background:rgba(127,29,29,.35); color:#fca5a5;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:17px; font-weight:800; cursor:pointer;
+}
+.rq-missing:active{ background:rgba(127,29,29,.55); }
+.rq-missing.filled{
+  border-style:solid; border-color:#166534;
+  background:rgba(22,101,52,.3); color:#4ade80;
+}
+.rq-card.rq-summary .rq-missing{ min-height:38px; font-size:16px; }
+
+/* 照合キー: 値を主役にする */
+.rq-keys{
+  background:#0b1220; border:1px solid #1e293b; border-left:3px solid var(--cyan);
+  border-radius:10px; padding:7px 10px;
+}
+.rq-keys-title{ font-size:13px; font-weight:800; color:#64748b; margin-bottom:4px; }
+.rq-keys-row{ display:flex; gap:10px; }
+.rq-key{ display:flex; flex-direction:column; }
+.rq-key-v{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:18px; font-weight:800; color:var(--cyan);
+}
+.rq-key-l{ font-size:13px; color:#64748b; font-weight:700; }
+
+/* 表（source / 折りたたみ内）。14px以上 */
+/* 長い列名(authenticated_resident等)で横幅がviewportを超えないよう、
+   見出しだけ折り返しを許可し、列幅は等分に固定する。文字は縮めない。 */
+.rq-table{ width:100%; max-width:100%; border-collapse:collapse; table-layout:fixed; }
+.rq-table th, .rq-table td{
+  font-size:14px; line-height:1.4; padding:4px 4px;
+  text-align:left; border-bottom:1px solid #131c2e;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.rq-table th{
+  font-size:14px; color:#64748b; font-weight:700;
+  white-space:normal; word-break:break-all; line-height:1.25;
+}
+.rq-table td{ white-space:nowrap; }
+.rq-table td{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:15px; color:#cbd5e1; font-weight:700;
+}
+
+/* source行 = Tap Target 44px以上 */
+.rq-card.rq-source tbody tr.relation-source-row{ cursor:pointer; }
+.rq-card.rq-source tbody tr.relation-source-row td{ padding:14px 5px; }
+.rq-card.rq-source tbody tr.relation-source-row:active td{ background:#1f2937; }
+tr.relation-source-row.matched td{ background:rgba(22,101,52,.32); color:#bbf7d0; }
+tr.relation-source-row.mismatched td{ background:rgba(127,29,29,.32); color:#fecaca; }
+
+/* 照合結果パネル */
+#relationTrace{ flex:0 0 auto; }
+#relationTrace:empty{ display:none; }
+.rq-match{
+  border-radius:10px; padding:8px 10px;
+  border:1px solid #1e293b; background:#0f1b2e;
+}
+.rq-match.rq-active{ box-shadow:0 6px 18px rgba(0,0,0,.45); }
+.rq-match.ok{ border-color:#166534; box-shadow:0 0 0 1px rgba(22,101,52,.55), 0 6px 18px rgba(0,0,0,.45); }
+.rq-match.ng{ border-color:#7f1d1d; box-shadow:0 0 0 1px rgba(127,29,29,.55), 0 6px 18px rgba(0,0,0,.45); }
+.rq-verdict{
+  font-size:16px; font-weight:900; letter-spacing:.08em; margin-bottom:5px;
+}
+.rq-match.ok .rq-verdict{ color:#4ade80; }
+.rq-match.ng .rq-verdict{ color:#f87171; }
+.rq-cmp{
+  display:flex; align-items:center; gap:8px;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:15px; font-weight:800; padding:2px 0;
+}
+.rq-cmp-l{ font-family:"Noto Sans JP",sans-serif; font-size:13px; color:#64748b; min-width:62px; }
+.rq-cmp.ok{ color:#86efac; }
+.rq-cmp.ng{ color:#fca5a5; }
+.rq-cmp-op{ font-size:16px; color:var(--cyan); }
+
+/* 復元値 */
+#relationAnswer{ flex:0 0 auto; }
+.rq-answer{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  min-height:48px; padding:5px 10px;
+  border-radius:10px; border:1px dashed #334155; background:#111827;
+}
+.rq-answer.ok{ border-style:solid; border-color:#166534; background:#0b1220; }
+/* PREVIEW = 未確定。成功色(緑)も失敗色(赤)も使わない */
+.rq-answer.preview{ border-style:solid; border-color:#334155; background:#111827; }
+.rq-answer.preview .rq-answer-l{ color:#94a3b8; }
+.rq-answer.preview .rq-answer-v{ color:#94a3b8; }
+.rq-answer-l{ font-size:13px; font-weight:800; color:#64748b; }
+.rq-answer-v{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:22px; font-weight:800; color:#475569;
+}
+.rq-answer-v.filled{ color:#4ade80; }
+
+/* 成功画面 */
+.rq-card.rq-done{ border-color:#166534; box-shadow:0 0 0 1px rgba(22,101,52,.45), 0 6px 18px rgba(0,0,0,.45); }
+.rq-card.rq-done .rq-card-title{ color:#4ade80; }
+.rq-done-sub{
+  font-size:13px; font-weight:700; color:#64748b; margin:-2px 0 4px;
+}
+.rq-v.rq-restored{ color:#4ade80; }
+
+/* 折りたたみ（復元に不要な表・技術的ルール） */
+.rq-aside{ display:flex; flex-direction:column; gap:6px; }
+.rq-details{
+  background:#080f1c; border:1px solid #131c2e; border-radius:10px;
+  padding:6px 10px;
+}
+/* summary の display を変えるとUAの折りたたみ挙動が壊れるため list-item を維持する */
+.rq-details summary{
+  font-size:13px; font-weight:700; color:#64748b; cursor:pointer;
+  padding:7px 0; line-height:1.4;
+}
+.rq-details[open] summary{ color:#94a3b8; margin-bottom:4px; }
+.rq-rule{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:13px; line-height:1.6; color:#94a3b8;
+}
+
+/* Relation Task の縦詰まり時にActionBarが潰れないようにする（tap target >= 44px 維持）。
+   小さい画面(iPhone SE)ではflex縮小で46px指定が38px程度まで圧縮されるため。 */
+body[data-workspace="relation"] #actionBar,
+body[data-workspace="relation"] .act,
+body[data-workspace="relation-evidence"] #actionBar,
+body[data-workspace="relation-evidence"] .act,
+body[data-workspace="evidence"] #actionBar,
+body[data-workspace="evidence"] .act{
+  flex-shrink:0;
+  min-height:48px;
+}
+
+/* 🗣 NORA LOG ボタン。キャラクター/世界内AIのセリフは画面に常設せず、ここからのみ開く。 */
+#noraBtn{
+  flex:0 0 40px;
+  width:40px; height:40px;
+  display:grid; place-items:center;
+  padding:0; margin:0;
+  border:1px solid #334155; border-radius:8px;
+  background:#0f172a; color:#e2e8f0;
+  font-size:18px; cursor:pointer;
+}
+#noraBtn:active{ background:#1e293b; transform:scale(.95); }
+#noraBtn:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+/* ============================================================
+   SUCCESS WORKSPACE（Query Task成功画面 / 3領域アコーディオン）
+   body[data-workspace="success"] 限定。CH1〜CH4共通。
+   上: HUD固定 / 中: アコーディオン内部スクロール / 下: 次へ を固定
+   ============================================================ */
+#successPanel{ display:none; }
+#successPanel.show{ display:flex; flex-direction:column; min-height:0; }
+
+body[data-workspace="success"] #app{
+  display:flex; flex-direction:column; gap:6px; overflow:hidden;
+}
+/* 成功後にQuery編集UIと旧パネルを残さない */
+body[data-workspace="success"] #schemaPanel,
+body[data-workspace="success"] #mission,
+body[data-workspace="success"] #monitorWrap,
+body[data-workspace="success"] #tokenPad,
+body[data-workspace="success"] #utilBar,
+body[data-workspace="success"] #undoBtn,
+body[data-workspace="success"] #orderBtn,
+body[data-workspace="success"] #hintBtn,
+body[data-workspace="success"] #retryBtn,
+body[data-workspace="success"] #resultPanel,
+body[data-workspace="success"] #altPanel,
+body[data-workspace="success"] #revealPanel,
+body[data-workspace="success"] #predictBar,
+body[data-workspace="success"] #tutorialPanel,
+body[data-workspace="success"] #hintLine,
+body[data-workspace="success"] #relationPanel{ display:none !important; }
+
+body[data-workspace="success"] #hud{ flex:0 0 auto; }
+body[data-workspace="success"] #successPanel.show{ flex:1 1 auto; min-height:0; }
+/* 評価(MASTERED/ASSISTED/PRACTICE)はZONE 2が所有する。下部への二重表示はしない */
+body[data-workspace="success"] #feedback{ display:none !important; }
+body[data-workspace="success"] #actionBar{ flex:0 0 auto; }
+body[data-workspace="success"] #actionBar .act,
+body[data-workspace="success"] #actionBar{ flex-shrink:0; min-height:48px; }
+body[data-workspace="success"] #runBtn{ flex:1 1 auto; }
+
+/* 中央のスクロール領域。下部Actionに会話が隠れないようにする */
+#successZones{
+  flex:1 1 auto; min-height:0; overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  display:flex; flex-direction:column; gap:6px;
+  padding-bottom:8px;
+}
+
+/* ---- Zone card ---- */
+.zone{
+  background:#0b1220; border:1px solid #1e293b; border-radius:10px;
+  overflow:hidden; flex:0 0 auto;
+}
+.zone.open{ border-color:#334155; }
+#zoneResult.open{ border-color:#22d3ee; box-shadow:0 0 0 1px rgba(34,211,238,.3); }
+.zone-header{
+  display:flex; align-items:center; gap:8px;
+  width:100%; min-height:48px; padding:0 12px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#e2e8f0; font-size:15px; font-weight:800;
+}
+.zone-header:active{ background:#111827; }
+.zone-caret{ color:var(--cyan); font-size:13px; }
+.zone-title{ flex:1 1 auto; }
+.zone-unread{
+  display:none; color:#f87171; font-size:13px;
+}
+.zone-unread.show{ display:inline; }
+.zone-body{ display:none; padding:0 12px 12px; }
+.zone.open .zone-body{ display:block; }
+
+/* ---- ZONE 1 ---- */
+.zone-mission{ font-size:13px; font-weight:800; color:var(--cyan); letter-spacing:.03em; }
+.zone-problem{ margin-top:4px; font-size:14px; line-height:1.6; color:#e2e8f0; }
+.zone-table{ margin-top:8px; }
+.zone-table h5{
+  margin:0 0 3px; font-size:13px; font-weight:800; color:#7dd3fc; letter-spacing:.02em;
+}
+
+/* ---- 表（ZONE 1 / ZONE 2 共通・14px以上） ---- */
+.zone-grid{ width:100%; border-collapse:collapse; }
+.zone-grid th, .zone-grid td{
+  font-size:14px; line-height:1.4; padding:4px 5px; text-align:left;
+  border-bottom:1px solid #131c2e; white-space:nowrap;
+}
+.zone-grid th{ color:#64748b; font-weight:700; }
+.zone-grid td{
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace; color:#cbd5e1;
+}
+.zone-grid td.pk{ color:var(--amber); font-weight:700; }
+.zone-grid.result td{ color:#e2e8f0; font-weight:700; }
+
+/* ---- ZONE 2 ---- */
+.zone-label{
+  margin-top:8px; font-size:13px; font-weight:800; letter-spacing:.05em; color:#64748b;
+}
+.zone-sql{
+  margin-top:3px; padding:8px 10px; border-radius:8px;
+  background:#070d1a; border:1px solid #1e293b;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:14px; line-height:1.55; color:#67e8f9; word-break:break-all;
+}
+.zone-sql.alt{ color:#a3e635; }
+#zoneResultBody .alt-none{
+  margin-top:8px; font-size:13px; color:#64748b;
+}
+.zone-clear{
+  margin-top:10px; padding:7px 10px; border-radius:8px;
+  border:1px solid #1e293b; background:#0f172a;
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+}
+.zone-clear-type{ font-size:14px; font-weight:900; letter-spacing:.06em; }
+.zone-clear.mastered .zone-clear-type{ color:#4ade80; }
+.zone-clear.assisted .zone-clear-type{ color:var(--amber); }
+.zone-clear.practice .zone-clear-type{ color:#94a3b8; }
+.zone-clear-note{ font-size:13px; color:#94a3b8; }
+
+/* ---- ZONE 3 ---- */
+.zone-line{ margin-top:8px; }
+.zone-speaker{
+  display:block; font-size:13px; font-weight:800; color:var(--cyan); letter-spacing:.04em;
+}
+.zone-speaker:empty{ display:none; }
+.zone-say{
+  display:block; margin-top:2px; font-size:15px; line-height:1.7; color:#e2e8f0;
+}
+.zone-terminal{
+  margin-top:10px; padding:8px 10px; border-radius:8px;
+  background:#070d1a; border:1px solid #1e293b;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:14px; line-height:1.6; color:#a3e635;
+}
+.zone.empty .zone-unread{ display:none !important; }

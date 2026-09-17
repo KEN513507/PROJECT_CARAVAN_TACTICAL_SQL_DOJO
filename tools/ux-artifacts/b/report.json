@@ -1,0 +1,844 @@
+{
+  "decoder": "B",
+  "generatedAt": "2026-09-17T15:51:56.315Z",
+  "viewports": {
+    "iphone-se": {
+      "elapsedMs": 18236,
+      "summary": {
+        "total": 58,
+        "pass": 58,
+        "fail": 0,
+        "failures": []
+      }
+    },
+    "iphone-16e": {
+      "elapsedMs": 17659,
+      "summary": {
+        "total": 58,
+        "pass": 58,
+        "fail": 0,
+        "failures": []
+      }
+    }
+  },
+  "results": [
+    {
+      "viewport": "iphone-se",
+      "state": "NORA_SHIFT",
+      "check": "shift:#schemaPanel<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "NORA_SHIFT",
+      "check": "shift:#monitor<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "NORA_SHIFT",
+      "check": "shift:#tokenPad<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "NORA_SHIFT",
+      "check": "shift:#actionBar<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "phase==AWAITING_QUERY",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "visible:#schemaPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "visible:#monitor",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "visible:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "hidden:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "minHeight:#tokenPad>=180",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "minTapHeight:tok\"SELECT\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "phase==QUERY_DRAFTING",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "visible:#schemaPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "visible:#monitor",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "visible:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "hidden:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minHeight:#tokenPad>=180",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"resident_i\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"display_na\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"status\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"last_secto\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "visible:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"1行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"3行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"5行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:tok\"AND\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "PREDICTION",
+      "check": "overlayBlocksBackground:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "phase==EVIDENCE_REVEALED",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "visible:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "hidden:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "hidden:#utilBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "minAreaRatio:#resultPanel>=0.55",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_SILENCE",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "phase==CHAPTER_CLEARED",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#successPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#zoneResult",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#utilBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#monitorWrap",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#revealPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-se",
+      "state": "EVIDENCE_FINAL",
+      "check": "minTapHeight:act\"▶ 次の照会へ\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "NORA_SHIFT",
+      "check": "shift:#schemaPanel<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "NORA_SHIFT",
+      "check": "shift:#monitor<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "NORA_SHIFT",
+      "check": "shift:#tokenPad<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "NORA_SHIFT",
+      "check": "shift:#actionBar<=1px",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "phase==AWAITING_QUERY",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "visible:#schemaPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "visible:#monitor",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "visible:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "hidden:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "minHeight:#tokenPad>=180",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "minTapHeight:tok\"SELECT\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "INSPECT",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "phase==QUERY_DRAFTING",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "visible:#schemaPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "visible:#monitor",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "visible:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "hidden:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minHeight:#tokenPad>=180",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"resident_i\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"display_na\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"status\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:tok\"last_secto\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "COMPOSE",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "visible:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"1行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"3行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:predict-btn\"5行\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:tok\"AND\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"↶ 戻す\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"💡 ヒントを見る\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "minTapHeight:act\"▶ 実行 & 検証\"",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "PREDICTION",
+      "check": "overlayBlocksBackground:#predictBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "phase==EVIDENCE_REVEALED",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "visible:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "hidden:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "hidden:#utilBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "minAreaRatio:#resultPanel>=0.55",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_SILENCE",
+      "check": "pageScroll:false",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "phase==CHAPTER_CLEARED",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#successPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#zoneResult",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "visible:#runBtn",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#tokenPad",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#utilBar",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#monitorWrap",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#resultPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "hidden:#revealPanel",
+      "pass": true,
+      "message": ""
+    },
+    {
+      "viewport": "iphone-16e",
+      "state": "EVIDENCE_FINAL",
+      "check": "minTapHeight:act\"▶ 次の照会へ\"",
+      "pass": true,
+      "message": ""
+    }
+  ],
+  "summary": {
+    "total": 116,
+    "pass": 116,
+    "fail": 0,
+    "failures": []
+  }
+}
