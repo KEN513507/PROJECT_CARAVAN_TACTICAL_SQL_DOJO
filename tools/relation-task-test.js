@@ -19,7 +19,10 @@ function eq(label, actual, expected){
 
 (async () => {
   const mod = await import(pathToFileURL(path.resolve(__dirname, '../js/relation-task.js')).href);
-  const data = await import(pathToFileURL(path.resolve(__dirname, '../js/data.js')).href);
+  // relation-task.js と同じ specifier で読む。query stringが違うと別モジュール実体になり、
+  // 「複製せず参照している」ことを検証できなくなるため。
+  const data = await import(pathToFileURL(path.resolve(__dirname, '../js/data.js')).href
+    + '?v=20260918-ch6-investigation');
   const { RELATION_TASKS, RelationPhase, RelationTaskSession, evaluateRelation,
           getRelationTask, buildRelationTables, EvidenceType,
           evaluateRelationMatch, referencedValues } = mod;
@@ -170,8 +173,16 @@ function eq(label, actual, expected){
     check('[def] NORAがS2/S4の不一致を解説していない（後続調査の余地を残す）',
       !/S2/.test(task.evidence.nora) && !/矛盾/.test(task.evidence.nora), task.evidence.nora);
 
-    // fixtureは TABLES を汚染しない（SQLエンジンの照会対象を変えない）
-    check('[canon] EVAC_RECEPTION は TABLES に入っていない', !TABLES.EVAC_RECEPTION);
+    // EVAC_RECEPTION は CHAPTER 6 でSQL照会するため TABLES 側が唯一の定義。
+    // ただし E442 は RAW FACT としては欠損のままでなければならない（復元前を復元済みにしない）。
+    check('[canon] EVAC_RECEPTION は TABLES に存在する（CH6のSQL照会対象）', !!TABLES.EVAC_RECEPTION);
+    {
+      const canonE442 = TABLES.EVAC_RECEPTION.rows.find(r => r[0] === 'E442');
+      const ci = TABLES.EVAC_RECEPTION.cols.indexOf('resident_id');
+      eq('[canon] TABLES上のE442 resident_idは欠損(null)のまま', canonE442[ci], null);
+      check('[canon] fixtureはTABLESの行を複製せず参照している',
+        task.fixtureTables.find(t => t.name === 'EVAC_RECEPTION').rows === TABLES.EVAC_RECEPTION.rows);
+    }
     check('[canon] TERMINAL_LOG は TABLES に入っていない', !TABLES.TERMINAL_LOG);
 
     // 既存人物へのID再割当をしていないこと
@@ -202,12 +213,17 @@ function eq(label, actual, expected){
     eq('[tables] 2つ目は EVAC_RECEPTION', tables[1].name, 'EVAC_RECEPTION');
     eq('[tables] 3つ目は TERMINAL_LOG', tables[2].name, 'TERMINAL_LOG');
 
-    const e442 = tables[1].rows.find(r => r[0] === 'E442');
-    eq('[tables] E442のresident_idは欠損(null)', e442[1], null);
-    eq('[tables] E442のterminal_idはT-S4-03', e442[2], 'T-S4-03');
-    const t03 = tables[2].rows.find(r => r[0] === 'T-S4-03');
-    eq('[tables] T-S4-03の認証住民はR005', t03[1], 'R005');
-    eq('[tables] 時刻が一致している(23:09)', e442[3] === t03[2] && e442[3], '23:09');
+    // 列位置に依存しない参照（sector列の追加のような面の変更で壊れないようにする）
+    const recT = tables[1], logT = tables[2];
+    const rc = c => recT.cols.indexOf(c), lc = c => logT.cols.indexOf(c);
+    const e442 = recT.rows.find(r => r[0] === 'E442');
+    eq('[tables] E442のresident_idは欠損(null)', e442[rc('resident_id')], null);
+    eq('[tables] E442のterminal_idはT-S4-03', e442[rc('terminal_id')], 'T-S4-03');
+    eq('[tables] E442のsectorはS4（文字列解析に頼らずデータで保持）', e442[rc('sector')], 'S4');
+    const t03 = logT.rows.find(r => r[0] === 'T-S4-03');
+    eq('[tables] T-S4-03の認証住民はR005', t03[lc('authenticated_resident')], 'R005');
+    eq('[tables] 時刻が一致している(23:09)',
+      e442[rc('received_at')] === t03[lc('authenticated_at')] && e442[rc('received_at')], '23:09');
   }
 
   // ================= 関係推論が一意に決まること（FE Learning Gate） =================

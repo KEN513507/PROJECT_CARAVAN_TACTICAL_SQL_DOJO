@@ -9,4 +9,7 @@ package-lock.json
 Thumbs.db
 .DS_Store
 !assets/**/*.png
-!assets/**/*.jpgtools/ux-artifacts/
+!assets/**/*.jpg
+
+# 検証生成物（スクリーンショット / report.json）。Git対象外。
+tools/ux-artifacts/

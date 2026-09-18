@@ -1,10 +1,10 @@
 // js/app.js
 import { SoundEngine } from './sound.js?v=20260915-sprint2';
 import { BgmEngine } from './bgm.js?v=20260915-sprint2';
-import { TABLES, STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260915-sprint2';
+import { TABLES, STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260918-ch6-investigation';
 import { judgeByResult } from './sql-engine.js?v=20260917-fe-rtp';
-import { getRelationTask, buildRelationTables, RelationTaskSession, RelationPhase, evaluateRelation }
-  from './relation-task.js?v=20260917-relation01';
+import { getRelationTask, buildRelationTables, RelationTaskSession, RelationPhase, evaluateRelation,
+  applyReconstructedFacts } from './relation-task.js?v=20260918-ch6-investigation';
 import { UIManager } from './ui.js?v=20260915-sprint2';
 import { ChapterSession, Phase } from './chapter-session.js?v=20260915-sprint2';
 
@@ -21,7 +21,7 @@ const WORKSPACE_BY_PHASE = {
 
 const sound = new SoundEngine();
 const bgm = new BgmEngine();
-const CHAPTER_BGM = ['airy', 'pulse', 'pulse', 'transmission'];
+const CHAPTER_BGM = ['airy', 'pulse', 'pulse', 'transmission', 'airy', 'transmission'];
 const PROGRESS_KEY = 'caravan_progress';
 const MASTERY_KEY = 'caravan_mastery';
 const MUTE_KEY = 'caravan_muted';
@@ -174,6 +174,9 @@ class App {
     this.stage = 0;
     this.xp = 0;
     this.cleared = new Array(STAGES.length).fill(false);
+    // RECONSTRUCTED FACT。RAW FACT（TABLES）とは別に保持し、照会時にだけ重ねる。
+    // 形式: { 'EVAC_RECEPTION.E442.resident_id': 'R005' }
+    this.reconstructedFacts = {};
     this.timeLeft = 0;
     this.timerId = null;
     this.assistLevel = 0; // 0: 自力、1〜3: ヒント、4: 完成SQL
@@ -403,10 +406,17 @@ class App {
       return null;
     }
   }
+  // ---- RECONSTRUCTED FACT ----
+  // TABLES（RAW FACT）は書き換えない。照会のときだけ復元値を重ねた表を作る。
+  // これにより「復元していない状態」と「復元済みの状態」が別物として残る（RTP / 裁定 §5 §10）。
+  queryTables(){ return applyReconstructedFacts(TABLES, this.reconstructedFacts); }
+  hasFact(key){ return Object.prototype.hasOwnProperty.call(this.reconstructedFacts, key); }
+
   saveProgress(){
     try{
       localStorage.setItem(PROGRESS_KEY, JSON.stringify({
-        xp: this.xp, stage: this.stage, cleared: this.cleared, clearTypes: this.clearTypes
+        xp: this.xp, stage: this.stage, cleared: this.cleared, clearTypes: this.clearTypes,
+        reconstructedFacts: this.reconstructedFacts
       }));
     }catch(e){
       // iOS Safari プライベートモード等で保存できなくてもゲームは継続する
@@ -428,11 +438,14 @@ class App {
       this.cleared = saved.cleared.length === STAGES.length ? saved.cleared : new Array(STAGES.length).fill(false);
       this.clearTypes = Array.isArray(saved.clearTypes) && saved.clearTypes.length === STAGES.length
         ? saved.clearTypes : new Array(STAGES.length).fill(null);
+      this.reconstructedFacts = (saved.reconstructedFacts && typeof saved.reconstructedFacts === 'object')
+        ? saved.reconstructedFacts : {};
     } else {
       this.xp = 0;
       this.stage = 0;
       this.cleared = new Array(STAGES.length).fill(false);
       this.clearTypes = new Array(STAGES.length).fill(null);
+      this.reconstructedFacts = {};
       this.saveProgress();
     }
   }
@@ -620,7 +633,8 @@ class App {
     const built = this.session.draft.tokens.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
     // 実SQL実行（READ-ONLY）: 文字列一致ではなく、実データへ適用した結果で判定する。
     // これにより想定外だが正しい別解も受理される (docs/NEON_RELAY_FE_RTP_IMPLEMENTATION_ALIGNMENT.md)。
-    const r = judgeByResult(built, st.resultSet, TABLES);
+    // 復元事実を重ねた表で照会する（RAW FACT の TABLES は書き換えない）
+    const r = judgeByResult(built, st.resultSet, this.queryTables());
     const computed = r.result || st.resultSet;
 
     if(r.empty){
@@ -740,7 +754,7 @@ class App {
       missionTitle: st.level,
       problem: st.prompt,
       // 2表・3表問題でも全source tableをZONE 1へ収める
-      tables: (st.tables || []).map(name => Object.assign({ name }, TABLES[name])),
+      tables: (st.tables || []).map(name => Object.assign({ name }, this.queryTables()[name])),
       executedSql: this.lastBuiltSql || st.answers[0],
       result: this.lastResult || st.resultSet,
       alternatives: (st.answers || []).slice(1),
@@ -755,11 +769,15 @@ class App {
   // Story Beatを話者つきの会話として渡す。本文はst.revealのまま（Story変更なし）。
   successDialogue(st){
     if(!st.reveal) return { lines: [], terminal: [] };
+    // 会話は「監査員（プレイヤー側）の反応 → NORAの応答」の順で交互に進む。
+    // 結果を見て最初に違和感を口にするのは監査員であり、NORAが先に解説しない（裁定 §8）。
+    let turn = 0;
     const lines = String(st.reveal.text || '').split(String.fromCharCode(10))
       .map(t => t.trim()).filter(Boolean)
       .map(t => {
-        const quoted = /^[「『]/.test(t);
-        return { speaker: quoted ? 'NORA' : '', text: t };
+        if(!/^[「『]/.test(t)) return { speaker: '', text: t };
+        const speaker = (turn++ % 2 === 0) ? '監査員' : 'NORA';
+        return { speaker, text: t };
       });
     return { lines, terminal: st.reveal.terminal || [] };
   }
@@ -1014,11 +1032,9 @@ ${st.note || ''}`.trim();
       slotId: slot.id
     }));
 
-    // 照合キーは「値」を主役にし、列の対応はラベル（短い語）で示す
-    const labelOf = col => col.replace(/_id$/, '').replace(/_at$/, '')
-      .replace('terminal', 'terminal').replace('received', 'time');
+    // DISPLAY TERMINOLOGY CONTRACT: 表示ラベルは内部識別子そのもの。省略・言い換えをしない。
     const keyStrip = rel.keys.map(k => ({
-      label: labelOf(k.targetCol),
+      label: k.targetCol,
       value: targetRow[targetTable.cols.indexOf(k.targetCol)]
     }));
 
@@ -1134,6 +1150,9 @@ ${st.note || ''}`.trim();
     const gain = clearType === 'MASTERED' ? 100 : 50;
     this.xp += gain;
     this.cleared[this.stage] = true;
+    // 復元された事実を RECONSTRUCTED FACT として記録する。
+    // TABLES（RAW FACT）は書き換えない。次章のSQL照会時にだけ重ねられる。
+    this.recordReconstructedFacts();
     this.recordMastery(clearType, this.relation.assistanceLevel);
     this.saveProgress();
     this.ui.setHud(this.stage, STAGES.length, this.xp);
@@ -1147,6 +1166,18 @@ ${st.note || ''}`.trim();
       : `✅ 復元完了 — ヒント使用。+${gain} XP`, 'ok');
     this.ui.markSolved(this.stage === STAGES.length - 1);
     this.ui.setRunLabel(this.stage === STAGES.length - 1 ? '📁 記録の続きを見る' : '▶ 続ける');
+  }
+
+  // Relation Task で成立した対応関係から、復元された値を事実として登録する。
+  recordReconstructedFacts(){
+    if(!this.relation) return;
+    for(const slot of this.relation.task.slots){
+      const m = this.relation.matchOf(slot.id);
+      if(!m || !m.allMatch) continue;
+      const value = this.relation.answers[slot.id];
+      if(value === null || value === undefined) continue;
+      this.reconstructedFacts[`${slot.target.table}.${slot.target.rowKey}.${slot.target.col}`] = value;
+    }
   }
 
   relationHint(){
@@ -1166,6 +1197,17 @@ ${st.note || ''}`.trim();
     if(st && st.interactionKind === 'RELATION_FILL'){
       this.loadRelationTask();
       return;
+    }
+    // 復元事実を前提にする章は、実際に復元されるまで開かない。
+    // 「まだ復元していないのに復元済みとして扱うUI」を作らないための門（裁定 §10）。
+    if(st && st.requiresFact && !this.hasFact(st.requiresFact)){
+      const src = STAGES.findIndex(s => s.interactionKind === 'RELATION_FILL');
+      if(src !== -1 && src !== this.stage){
+        this.stage = src;
+        this.load();
+        this.ui.setFeedback('先に記録の復元が必要です。CHAPTER 5 から進めよう。', '');
+        return;
+      }
     }
     this.ui.showRelationWorkspace(false);
     this.ui.hideRelationTask();
@@ -1204,7 +1246,7 @@ ${st.note || ''}`.trim();
     this.ui.hideReveal();
     this.ui.resetRunBtn();
     this.ui.setMission(st.level, st.prompt);
-    this.ui.renderSchema(st.tables);
+    this.ui.renderSchema(st.tables, this.queryTables());
     this.ui.renderTokens(st.tokens);
     this.ui.setHud(this.stage, STAGES.length, this.xp);
     this.ui.setFeedback('', '');

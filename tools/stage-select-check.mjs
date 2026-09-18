@@ -28,6 +28,8 @@ async function openSelector(page){
   await page.waitForSelector('#stageDrawer.show', { timeout: 5000 });
 }
 
+const STAGE_COUNT = 6;
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: VP, hasTouch: true, isMobile: true });
@@ -52,10 +54,11 @@ async function openSelector(page){
     })));
     const title = await page.textContent('#stageDrawerTitle');
     check('DEBUGであることがタイトルに出る', /DEBUG/.test(title), title.trim());
-    check('全章がセレクタに並ぶ', items.length === 5, `count=${items.length}`);
+    check('全章がセレクタに並ぶ', items.length === STAGE_COUNT, `count=${items.length}`);
     check('未クリア章も disabled でない', items.every(i => !i.disabled), JSON.stringify(items.map(i => i.disabled)));
     check('未クリア章に locked クラスが付かない', items.every(i => !i.locked), JSON.stringify(items.map(i => i.locked)));
     check('CH5(Relation Task)も選べる', /CH\.5/.test(items[4].name), items[4].name);
+    check('CH6(SQL Investigation)も選べる', /CH\.6/.test(items[5].name), items[5].name);
 
     // ---- 各章へ跳んで画面の整合を確認 ----
     // 期待: CH1=ch1-ui + Query / CH2〜4=通常Query / CH5=Relation
@@ -64,7 +67,9 @@ async function openSelector(page){
       { idx: 1, kind: 'query',    ch1ui: false },
       { idx: 2, kind: 'query',    ch1ui: false },
       { idx: 3, kind: 'query',    ch1ui: false },
-      { idx: 4, kind: 'relation', ch1ui: false }
+      { idx: 4, kind: 'relation', ch1ui: false },
+      // CH6 は復元事実を前提にするため、未復元でCH5へ戻されるのが正しい挙動。
+      { idx: 5, kind: 'relation', ch1ui: false, redirectsTo: 4 }
     ];
     for(const exp of expected){
       if(!(await page.isVisible('#stageDrawer.show'))) await openSelector(page);
@@ -93,7 +98,8 @@ async function openSelector(page){
         };
       });
 
-      check(`CH${exp.idx + 1}: HUDが該当章を示す`, st.label.includes(`CH.${exp.idx + 1}/5`), st.label);
+      const shownCh = exp.redirectsTo !== undefined ? exp.redirectsTo + 1 : exp.idx + 1;
+      check(`CH${exp.idx + 1}: HUDが該当章を示す`, st.label.includes(`CH.${shownCh}/${STAGE_COUNT}`), st.label);
       check(`CH${exp.idx + 1}: ch1-uiが期待どおり`, st.ch1ui === exp.ch1ui, `ch1ui=${st.ch1ui}`);
 
       if(exp.kind === 'relation'){

@@ -1,9 +1,9 @@
 {
   "decoder": "B",
-  "generatedAt": "2026-09-17T15:51:56.315Z",
+  "generatedAt": "2026-09-18T11:20:36.669Z",
   "viewports": {
     "iphone-se": {
-      "elapsedMs": 18236,
+      "elapsedMs": 18151,
       "summary": {
         "total": 58,
         "pass": 58,
@@ -12,7 +12,7 @@
       }
     },
     "iphone-16e": {
-      "elapsedMs": 17659,
+      "elapsedMs": 78204,
       "summary": {
         "total": 58,
         "pass": 58,

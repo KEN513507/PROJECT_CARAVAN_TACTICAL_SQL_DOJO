@@ -2,6 +2,8 @@
   "name": "project-caravan-tactical-sql-dojo",
   "private": true,
   "scripts": {
+    "beginner:test": "node tools/beginner-test.mjs",
+    "beginner:ui": "node tools/beginner-ui-test.mjs",
     "overlap": "node tools/overlap-check.js",
     "session:test": "node tools/session-test.js",
     "neon:parse": "python tools/parse_neon_relay_tables_strict.py story/neon_relay/full_story_canonicalized.md -o story/neon_relay/tables_canonicalized_strict.json",
@@ -20,5 +22,8 @@
   },
   "devDependencies": {
     "playwright": "^1.40.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.2"
   }
 }

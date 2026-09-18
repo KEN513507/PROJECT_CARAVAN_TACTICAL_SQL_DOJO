@@ -20,6 +20,7 @@ function rs(cols, rows){ return { cols, rows }; }
 (async () => {
   const eng = await import(pathToFileURL(path.resolve(__dirname, '../js/sql-engine.js')).href);
   const data = await import(pathToFileURL(path.resolve(__dirname, '../js/data.js')).href);
+  const rel = await import(pathToFileURL(path.resolve(__dirname, '../js/relation-task.js')).href);
   const { executeSelect, resultsMatch, judgeByResult, SqlError } = eng;
   const TABLES = data.TABLES, STAGES = data.STAGES;
 
@@ -28,11 +29,15 @@ function rs(cols, rows){ return { cols, rows }; }
   // ================= REAL_SQL_GATE: 各章の正解SQL =================
   // RELATION TASK等のSQL Query以外のstageは対象外（answersを持たない）。
   const QUERY_STAGES = STAGES.filter(st => Array.isArray(st.answers) && st.answers.length);
-  check('[REAL_SQL] SQL Query stageを検出できる', QUERY_STAGES.length === 4, `count=${QUERY_STAGES.length}`);
+  check('[REAL_SQL] SQL Query stageを検出できる', QUERY_STAGES.length === 5, `count=${QUERY_STAGES.length}`);
+  // requiresFact を持つ章は、Relation Taskで復元された事実を重ねてから照会される。
+  // RAW FACT のままでは0件になるのが正しい（復元前を復元済みにしない）。
+  const FACTS = { 'EVAC_RECEPTION.E442.resident_id': 'R005' };
   QUERY_STAGES.forEach((st, i) => {
+    const tbls = st.requiresFact ? rel.applyReconstructedFacts(TABLES, FACTS) : TABLES;
     st.answers.forEach((ans, k) => {
       let r = null, err = null;
-      try { r = run(ans); } catch(e){ err = e.message; }
+      try { r = executeSelect(ans, tbls); } catch(e){ err = e.message; }
       const ok = !!r && resultsMatch(r, st.resultSet);
       check(`[REAL_SQL] CH${i + 1} answers[${k}] が実データで期待結果と一致`, ok,
         err ? 'ERROR: ' + err : (r ? `rows=${r.rows.length} cols=${r.cols.join(',')}` : ''));

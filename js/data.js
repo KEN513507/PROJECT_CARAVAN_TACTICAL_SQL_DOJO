@@ -71,6 +71,21 @@ export const TABLES = {
       ['L06', 'C773', 'ARCHIVE-04', 'OUT', '23:43']
     ]
   },
+  // 新規Story Fact（CHAPTER 5 で復元対象になる受付記録の正史面）。
+  // resident_id は E442 のみ null のまま保持する = RAW FACT としては「欠損」が真実。
+  // 復元された R005 は RECONSTRUCTED FACT であり、この表へ恒久保存しない
+  // （app.js の reconstructedFacts が照会時にだけ重ねる。RTP §5 / 裁定 §5）。
+  // sector は端末設置区画。T-S4-** が第4セクターの受付端末であることを、
+  // 文字列解析ではなくデータとして保持する（裁定 §4）。
+  EVAC_RECEPTION: {
+    cols: ['reception_id', 'resident_id', 'terminal_id', 'sector', 'received_at'],
+    keys: ['reception_id'],
+    rows: [
+      ['E441', 'R004', 'T-S4-02', 'S4', '23:08'],
+      ['E442', null,   'T-S4-03', 'S4', '23:09'],
+      ['E443', 'R006', 'T-S4-01', 'S4', '23:10']
+    ]
+  },
   // BLOCKER: 実データは83件。本文で判明しているのは以下3件のみ。
   // 未確定の80件は捏造しない（story/neon_relay/STRICT_AUDIT.md）。
   TRANSIT_SHADOW: {
@@ -223,6 +238,45 @@ export const STAGES = [
     prompt: 'EVAC_RECEPTION の E442 で欠損している resident_id を、関連する記録から復元してください。',
     tables: [],
     tokens: []
+  },
+
+  // CHAPTER 6 — RELATION TASK で復元した事実を、プレイヤー自身がSQLで検証する章。
+  // MISSION文もNORAも「S2とS4が食い違っている」とは言わない。
+  // Query Result を見た瞬間にプレイヤーが自分で気づく構造にする（RTP: DERIVED FACT）。
+  { level: 'CHAPTER 6 / MISSION 5 : JOIN ─ 復元したIDを照合する', time: 70,
+    chapterTitle: 'CHAPTER 6　復元したIDを照合する',
+    requiresFact: 'EVAC_RECEPTION.E442.resident_id',
+    brief: '復元したR005を住民記録と照合する',
+    hint1: '1つの表だけでは分かりません。住民記録と受付記録は resident_id で対応しています。',
+    hint2: 'RESIDENT_CACHE AS c と EVAC_RECEPTION AS e を c.resident_id = e.resident_id で INNER JOIN し、WHERE で R005 に絞ります。',
+    skeleton: "SELECT ______, ______, ______, ______, ______ FROM ______ AS c INNER JOIN ______ AS e ON c.______ = e.______ WHERE c.______ = 'R005'",
+    prompt: '「復元した R005 の記録を、住民記録と照合してください」── R005 について、住民記録と受付記録の両方を1つの結果に並べる。',
+    note: 'RESIDENT_CACHE は住民ごとの登録情報（display_name / status / last_sector）を持つ。EVAC_RECEPTION は受付1件ごとに端末・区画・受付時刻を持つ。両者は resident_id で対応する。',
+    tables: ['RESIDENT_CACHE', 'EVAC_RECEPTION'],
+    tokens: [
+      T('SELECT', 'clause'), T('FROM', 'clause'), T('INNER JOIN', 'clause'), T('ON', 'clause'),
+      T('WHERE', 'clause'), T('AS', 'as'),
+      T('RESIDENT_CACHE', 'table'), T('EVAC_RECEPTION', 'table'),
+      T('c', 'alias'), T('e', 'alias'),
+      T('=', 'op'), T("'R005'", 'lit'),
+      T('c.resident_id', 'col'), T('c.display_name', 'col'), T('c.last_sector', 'col'),
+      T('e.sector', 'col'), T('e.received_at', 'col'), T('e.resident_id', 'col')
+    ],
+    answers: [
+      "SELECT c.resident_id, c.display_name, c.last_sector, e.sector, e.received_at FROM RESIDENT_CACHE AS c INNER JOIN EVAC_RECEPTION AS e ON c.resident_id = e.resident_id WHERE c.resident_id = 'R005'"
+    ],
+    resultSet: { cols: ['resident_id', 'display_name', 'last_sector', 'sector', 'received_at'], rows: [
+      ['R005', '千葉ユノ', 'S2', 'S4', '23:09']
+    ]},
+    rowChoices: [1, 2, 3],
+    steps: [
+      { k: '① FROM RESIDENT_CACHE AS c', d: '住民記録を c という別名で読み込む。' },
+      { k: '② INNER JOIN EVAC_RECEPTION AS e ON c.resident_id = e.resident_id', d: '復元済みの受付記録と resident_id で対応づける。' },
+      { k: '③ WHERE c.resident_id = \'R005\'', d: 'R005 の1件だけに絞る。' },
+      { k: '④ SELECT c.last_sector, e.sector, e.received_at', d: '登録上の区画と、受付端末が置かれていた区画を、同じ行に並べて出力する。' }
+    ],
+    // 結果を見た「後」の反応。解説ではなく、データを見た人間の短い声。
+    reveal: { size: 'small', text: '「……S2じゃない。」\n「受付端末は第4セクターにあります。登録は第2セクターのままです」' }
   }
 ];
 
@@ -310,7 +364,8 @@ export const SKILL_LABELS = [
   'GROUP BY aggregation (AS alias)',
   'HAVING (post-aggregation filter)',
   'INNER JOIN with table aliases',
-  'Relational reconstruction (表間の対応関係)'
+  'Relational reconstruction (表間の対応関係)',
+  'INNER JOIN で復元事実を検証する'
 ];
 
 // REAL FE CHALLENGE: IPA公開の過去問(出典を保持)。

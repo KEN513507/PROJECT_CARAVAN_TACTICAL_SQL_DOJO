@@ -9,8 +9,11 @@
 //   RelationTaskSession   … 回答状態とphase（Presentationを知らない）
 //   evaluateRelation      … 正誤判定のみ（DOM非依存）
 //
-// fixtureは js/data.js の TABLES へ入れない。
-// TABLES はSQLエンジンの照会対象であり、正史データの面を変えないため。
+// EVAC_RECEPTION は TABLES 側を唯一の定義とする（CHAPTER 6 の SQL Investigation で
+// 同じ表を照会するため。CH5 と CH6 で列の面が食い違うことを防ぐ）。ここでは複製せず参照する。
+// TERMINAL_LOG は CH5 の関係復元にしか使わないため mission-local fixture のまま置く。
+
+import { TABLES as CANON_TABLES } from './data.js?v=20260918-ch6-investigation';
 
 export const RelationPhase = Object.freeze({
   STORY_CONTEXT:     'STORY_CONTEXT',
@@ -42,16 +45,13 @@ export const RELATION_TASKS = {
     // ---- mission-local fixture（新規Story Fact） ----
     // 既存人物のIDはCanonのまま使う（R004/R005/R006）。IDの再割当はしない。
     fixtureTables: [
+      // TABLES.EVAC_RECEPTION を参照する（行データを複製しない）。
       {
         name: 'EVAC_RECEPTION',
         label: 'EVAC_RECEPTION 表（回収された受付記録）',
-        cols: ['reception_id', 'resident_id', 'terminal_id', 'received_at'],
-        keys: ['reception_id'],
-        rows: [
-          ['E441', 'R004', 'T-S4-02', '23:08'],
-          ['E442', null,   'T-S4-03', '23:09'],
-          ['E443', 'R006', 'T-S4-01', '23:10']
-        ]
+        cols: CANON_TABLES.EVAC_RECEPTION.cols,
+        keys: CANON_TABLES.EVAC_RECEPTION.keys,
+        rows: CANON_TABLES.EVAC_RECEPTION.rows
       },
       {
         name: 'TERMINAL_LOG',
@@ -137,6 +137,25 @@ export function buildRelationTables(task, canonTables){
   }
   for(const t of task.fixtureTables){
     out.push({ name: t.name, label: t.label, cols: t.cols, keys: t.keys || [], rows: t.rows, canon: false });
+  }
+  return out;
+}
+
+// RECONSTRUCTED FACT を RAW FACT の表へ重ねた「照会用の表」を返す。
+// 元の tables は書き換えない。復元前と復元後を別の状態として保つための関数（RTP）。
+// facts の形式: { 'TABLE.ROWKEY.COL': value }
+export function applyReconstructedFacts(tables, facts){
+  const keys = Object.keys(facts || {});
+  if(!keys.length) return tables;
+  const out = Object.assign({}, tables);
+  for(const k of keys){
+    const [tableName, rowKey, col] = k.split('.');
+    const src = out[tableName];
+    if(!src) continue;
+    const ci = src.cols.indexOf(col);
+    if(ci === -1) continue;
+    const rows = src.rows.map(r => (r[0] === rowKey ? r.map((v, i) => (i === ci ? facts[k] : v)) : r));
+    out[tableName] = Object.assign({}, src, { rows });
   }
   return out;
 }

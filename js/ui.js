@@ -1,5 +1,5 @@
 // js/ui.js
-import { TABLES } from './data.js?v=20260915-sprint2';
+import { TABLES } from './data.js?v=20260918-ch6-investigation';
 
 const $ = id => document.getElementById(id);
 
@@ -249,15 +249,17 @@ export class UIManager {
     if(action && action.onClick) action.onClick();
   }
 
-  renderSchema(tables){
+  // tablesSrc: 復元事実を重ねた表（App.queryTables()）。省略時は RAW FACT の TABLES。
+  renderSchema(tables, tablesSrc){
+    const src = tablesSrc || TABLES;
     let html = '';
     for(const name of tables){
-      const tb = TABLES[name];
+      const tb = src[name];
       if(!tb) continue;
       const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
       const body = tb.rows.map(r => '<tr>' + r.map((v,i) =>
-        `<td class="${tb.keys.indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${esc(v)}</td>`).join('') + '</tr>').join('');
-      html += `<div class="schema-card"><h4>📋 ${esc(name)} 表</h4>
+        `<td class="${tb.keys.indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${v === null || v === undefined ? '—' : esc(v)}</td>`).join('') + '</tr>').join('');
+      html += `<div class="schema-card"><h4>${esc(name)}</h4>
         <table class="mini"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
     this.el.schemaPanel.innerHTML = html;
