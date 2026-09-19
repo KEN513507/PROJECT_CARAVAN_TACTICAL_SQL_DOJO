@@ -39,6 +39,7 @@ const MASTERY_KEY = 'caravan_mastery';
 const MUTE_KEY = 'caravan_muted';
 const INTRO_KEY = 'caravan_intro_seen';
 const TUTORIAL_KEY = 'caravan_tutorial_seen';
+const MISSION_VISIBLE_KEY = 'neon_relay_mission_visible';
 const ROW_PREDICTION_MIN_SAMPLE = 8;
 
 // ---- DEBUG: ステージセレクタで全章を選択可能にする ----
@@ -244,6 +245,7 @@ class App {
       onRestart:     () => { sound.tap(); this.restart(); },
       onMissionDetail: () => this.openMissionDetail(),
       onNora:          ()    => this.openNoraLog(),
+      onMissionToggle: ()    => this.toggleMission(),
       onSuccessZone:   z     => this.toggleSuccessZone(z),
       onRelationSlot:   id => this.relationActivateSlot(id),
       onRelationSource: k  => this.relationSelectSource(k)
@@ -340,6 +342,17 @@ class App {
   boot(){
     // OPENING の出し分けは load() が本編CHAPTER 1の入口で行う。
     this.load();
+  }
+
+  // 問題文(#mission)の表示/非表示。プレイヤーが一度隠したら、その状態を覚えておく。
+  missionVisible(){
+    try { return localStorage.getItem(MISSION_VISIBLE_KEY) !== 'false'; } catch(e){ return true; }
+  }
+  toggleMission(){
+    const next = !this.missionVisible();
+    try { localStorage.setItem(MISSION_VISIBLE_KEY, String(next)); } catch(e){}
+    sound.tap(); vibrate(8);
+    this.ui.setMissionVisible(next);
   }
 
   introSeen(){

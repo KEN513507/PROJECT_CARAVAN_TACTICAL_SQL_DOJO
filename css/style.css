@@ -1618,11 +1618,25 @@ body.learning-ui [hidden] { display:none !important; }
 body.learning-ui #hud { order:0; min-height:44px; }
 body.learning-ui #stageLabel, body.learning-ui #muteBtn { min-height:44px; }
 body.learning-ui #mission { order:1; flex:0 0 auto; padding:6px 10px; }
+/* 問題文はワンボタンで隠せる。隠したぶんの高さは表とトークンへ回る。 */
+body.mission-hidden #mission { display:none; }
+/* 本編（CH1〜CH6）のHUDには出さない。学習章専用のボタン。 */
+#missionBtn { display:none; }
+body.learning-ui #missionBtn {
+  display:grid;
+  flex:0 0 40px; width:40px; height:40px; min-height:40px;
+  place-items:center; padding:0;
+  border:1px solid #334155; border-radius:8px;
+  background:#0f172a; color:#e2e8f0; font-size:17px; cursor:pointer;
+}
+body.learning-ui #missionBtn[aria-pressed="false"] { border-color:#92400e; background:#291a0a; color:var(--amber); }
 body.learning-ui #missionLevel { font-size:12px; color:var(--cyan); }
 body.learning-ui #missionText { font-size:14px; line-height:1.4; }
 body.learning-ui #missionBrief { display:none; }
 #learningGuide { color:#94a3b8; font-size:12px; line-height:1.4; margin-top:3px; }
-body.learning-ui #schemaPanel { order:2; flex:1 1 190px; min-height:110px; max-height:290px; display:flex; flex-direction:column; overflow:hidden; border:1px solid #334155; border-radius:8px; }
+/* 表とトークンの主従: どちらも縮むが、トークン選択が潰れないように下限を確保する。
+   表は内部scrollを持つので縮んでも参照できる。 */
+body.learning-ui #schemaPanel { order:2; flex:0 3 auto; min-height:132px; max-height:38vh; display:flex; flex-direction:column; overflow:hidden; border:1px solid #334155; border-radius:8px; }
 .learning-source-title { display:flex; justify-content:space-between; padding:5px 8px; color:#67e8f9; font-size:13px; }
 .learning-source-title span { font-size:11px; color:#94a3b8; }
 .learning-source-scroll { overflow:auto; min-height:0; flex:1; }
@@ -1645,9 +1659,13 @@ body.learning-ui #utilBar button { flex:1; min-height:44px; padding:3px; font-si
 body.learning-ui #feedback { order:5; flex:0 0 auto; font-size:12px; line-height:1.4; padding:0 6px; }
 body.learning-ui #feedback:empty { display:none; }
 body.learning-ui #resultPanel { order:6; max-height:95px; overflow:auto; flex:0 1 auto; }
-body.learning-ui #tokenPad { order:7; flex:0 1 105px; min-height:60px; max-height:135px; overflow:auto; }
-body.learning-ui .group-label { font-size:10px; margin:2px 0; }
-body.learning-ui .token-group { margin-bottom:3px; }
+/* トークン選択は操作の主役。狭く固定しない（以前は105px固定で6個中2個しか見えなかった）。 */
+body.learning-ui #tokenPad { order:7; flex:1 1 auto; min-height:182px; max-height:48vh; overflow:auto; }
+/* 分類ラベルを行内へ寄せ、縦積みで高さを食わないようにする。
+   M01(6トークン)が1画面に収まることを優先する。 */
+body.learning-ui .token-group { display:flex; flex-direction:row; align-items:center; gap:8px; margin-bottom:6px; }
+body.learning-ui .group-label { flex:0 0 46px; font-size:10px; margin:0; color:#64748b; line-height:1.25; }
+body.learning-ui .token-row { flex:1 1 auto; min-width:0; }
 body.learning-ui .tok { min-height:44px; font-size:13px; }
 body.learning-ui #actionBar { order:9; display:flex; flex:0 0 auto; gap:5px; }
 body.learning-ui #actionBar .act { min-height:48px; font-size:14px; }

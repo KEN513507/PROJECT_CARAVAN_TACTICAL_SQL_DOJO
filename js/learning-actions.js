@@ -92,6 +92,7 @@ export const learningActions = {
     document.body.dataset.workspace = 'compose';
     document.body.dataset.mission = st.id;
     this.ui.setMission(st.level, st.prompt);
+    this.ui.setMissionVisible(this.missionVisible());
     this.ui.setLearningHud(this.stage, this.cleared.filter(Boolean).length, stages.length);
     this.ui.renderLearningSource(st.tables[0], ONBOARDING_TABLES[st.tables[0]], st.note);
     this.ui.renderTokens(st.tokens);
@@ -121,6 +122,7 @@ export const learningActions = {
 
   tapLearningToken(t, k){
     if(this.solved || this.built.length >= 160) return;
+    this.ui.hideHint();
     this.learningUndo.push({ tokens: this.built.map(t => ({ ...t })), cursor: { ...this.learningCursor } });
     const next = editQuery(this.built, { t, k }, this.learningCursor);
     this.session.replaceDraft(next.tokens);
@@ -133,6 +135,7 @@ export const learningActions = {
 
   learningUtil(action){
     if(this.solved) return;
+    this.ui.hideHint();
     if(action === 'after'){
       this.learningCursor = { index: Math.min(this.built.length, this.learningCursor.index + (this.learningCursor.replace ? 1 : 0)), replace: false };
     } else if(action === 'end'){
@@ -208,6 +211,8 @@ export const learningActions = {
 
   learningHint(){
     if(this.solved) return;
+    // 出しっぱなしにしない。表示中にもう一度押したら閉じる（支援段階は増やさない）。
+    if(this.ui.isHintVisible()){ this.ui.hideHint(); return; }
     this.session.requestHint();
     const st = stages[this.stage];
     const level = this.session.assistanceLevel;

@@ -57,9 +57,19 @@ try {
       }
     }
     assert.deepEqual(await page.locator('#zoneResultBody th').allTextContents(), ['品目', '依頼合計']);
+    // campaign は M01〜M12 のあと本編 CHAPTER 1 へ続く。M12 で終わらない。
     await page.locator('#runBtn').click();
-    assert.equal(await page.locator('#stageDrawer .stage-item').count(), 12);
-    assert.equal(await page.locator('body').getAttribute('data-mission'), 'M12');
+    const opening = page.locator('#storyOverlay.show');
+    if(await opening.isVisible().catch(() => false)) await page.locator('#storyContinueBtn').click();
+    await page.locator('body.ch1-ui').waitFor();
+    assert.ok((await page.locator('#missionLevel').textContent()).includes('CHAPTER 1'),
+      'M12 の次は本編 CHAPTER 1');
+    assert.ok((await page.locator('#stageLabel').textContent()).includes('CH.1/6'),
+      'HUD は本編の章番号を示す');
+    await page.locator('#stageLabel').click();
+    assert.equal(await page.locator('#stageDrawer .stage-item').count(), 18,
+      'ステージ一覧は M01〜M12 + CHAPTER 1〜6');
+    await page.locator('#stageDrawerClose').click();
     assert.deepEqual(errors, []);
     await context.close();
     console.log(`PASS complete tap campaign / source / retry / persistence / success zones ${viewport.width}x${viewport.height}`);

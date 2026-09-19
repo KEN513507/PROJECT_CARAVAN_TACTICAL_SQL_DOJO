@@ -34,6 +34,7 @@ export class UIManager {
         <span id="timer">⏱ 60s</span>
         <span id="xp">XP 0</span>
         <button type="button" id="noraBtn" aria-label="NORAの通信を開く">🗣</button>
+        <button type="button" id="missionBtn" aria-label="問題文の表示を切り替える" aria-pressed="true">📋</button>
       </header>
       <section id="schemaPanel"></section>
       <section id="mission">
@@ -179,7 +180,7 @@ export class UIManager {
      'backdrop','drawer','drawerTitle','drawerBody','drawerClose',
      'stageBackdrop','stageDrawer','stageDrawerTitle','stageDrawerBody','stageDrawerClose',
      'predictBar','predictChoices','predictCancel',
-     'relationPanel','relationContext','relationTables','relationTrace','relationAnswer','noraBtn',
+     'relationPanel','relationContext','relationTables','relationTrace','relationAnswer','noraBtn','missionBtn',
      'successPanel','successZones','zoneProblem','zoneProblemBody','zoneResult','zoneResultBody',
      'zoneComm','zoneCommBody','zoneCommUnread',
      'result','resultScroll','masteredList','chapterResults','masterySummary','rowPredictionLine',
@@ -214,6 +215,7 @@ export class UIManager {
     this.el.undoBtn.addEventListener('click', () => h.onUtil('undo'));
     this.el.mission.addEventListener('click', () => { if(h.onMissionDetail) h.onMissionDetail(); });
     this.el.noraBtn.addEventListener('click', () => { if(h.onNora) h.onNora(); });
+    this.el.missionBtn.addEventListener('click', () => { if(h.onMissionToggle) h.onMissionToggle(); });
     this.el.successZones.querySelectorAll('.zone-header').forEach(b => {
       b.addEventListener('click', () => {
         if(h.onSuccessZone) h.onSuccessZone(b.getAttribute('data-zone'));
@@ -432,6 +434,12 @@ export class UIManager {
     this.el.xp.hidden = false;
     this.el.noraBtn.hidden = false;
   }
+  // 問題文(#mission)の表示/非表示。ワンボタンで切り替える。
+  setMissionVisible(visible){
+    document.body.classList.toggle('mission-hidden', !visible);
+    if(this.el.missionBtn) this.el.missionBtn.setAttribute('aria-pressed', String(visible));
+  }
+
   // Relation Task等、制限時間を持たないステージ用
   setTimerIdle(){
     this.el.timer.textContent = '⏱ —';
@@ -455,6 +463,7 @@ export class UIManager {
     this.el.hintLine.classList.add('show');
   }
   hideHint(){ this.el.hintLine.classList.remove('show'); this.el.hintLine.textContent = ''; }
+  isHintVisible(){ return this.el.hintLine.classList.contains('show'); }
 
   // ---- チュートリアル (CHAPTER 1 初回のみ・NORAの案内) ----
   showTutorial(text){

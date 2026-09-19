@@ -101,10 +101,13 @@ export const ONBOARDING_STAGES = specs.map((s, i) => {
     level: `M${String(i + 1).padStart(2, '0')} · ${s[0]}`, chapterTitle: s[0],
     prompt: s[1], brief: s[1], concept: concepts[i], tables: [table],
     note: i < 6 ? '一行は、一つの棚にある一種類の備品。在庫数を数量に記録しています。' : '一行は一件の補充依頼。数量は依頼された個数です。',
-    guide: s[6], hint1: s[6], hint2: `必要な操作：${concepts[i]}。表の見出しもタップできます。`,
-    skeleton: s[7] || s[2].replace(/SELECT .*? FROM/, 'SELECT □ FROM'),
+    // 仕様配列は [題名, 指示, 正解SQL, 列, 行, ガイド文, 初期SQL(任意)]。
+    // 以前は guide=s[6] / starter=s[7] と1つずれており、ガイド文の代わりにSQLが出て、
+    // 初期SQLを持つ M01/M07/M09 でそれが適用されなかった。
+    guide: s[5], hint1: s[5], hint2: `必要な操作：${concepts[i]}。表の見出しもタップできます。`,
+    skeleton: s[6] || s[2].replace(/SELECT .*? FROM/, 'SELECT □ FROM'),
     answers: [s[2]], resultSet: { cols: s[3], rows: s[4].map(r => [...r]) },
-    ordered: i === 5, starter: s[7], tokens: [...new Set(words)].map(t => ({ t, k: tokenKind(t) })),
+    ordered: i === 5, starter: s[6], tokens: [...new Set(words)].map(t => ({ t, k: tokenKind(t) })),
     reveal: { text: i === 11 ? '備品ごとの補充数量を確認できました。今回の12件の作業は完了です。' : '照会結果を作業記録に保存しました。' }
   };
 });
