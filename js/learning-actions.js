@@ -90,13 +90,14 @@ export const learningActions = {
     this.ui.enableAfterTimeout();
     document.body.classList.add('learning-ui');
     document.body.dataset.workspace = 'compose';
+    this.ui.setFocus('source');   // 開始時は表を大きく（まずデータを読む）
     document.body.dataset.mission = st.id;
     this.ui.setMission(st.level, st.prompt);
     this.ui.setMissionVisible(this.missionVisible());
     this.ui.setLearningHud(this.stage, this.cleared.filter(Boolean).length, stages.length);
     this.ui.renderLearningSource(st.tables[0], ONBOARDING_TABLES[st.tables[0]], st.note);
     this.ui.renderTokens(st.tokens);
-    this.ui.renderLearningGuide(st.guide);
+    this.ui.renderLearningGuide();
     this.ui.setFeedback('', '');
     this.ui.resetRunBtn();
     this.ui.setRunLabel('▶ 実行する');
@@ -115,6 +116,7 @@ export const learningActions = {
 
   selectLearningToken(index){
     if(this.solved) return;
+    this.ui.setFocus('query');
     this.learningCursor = { index, replace: true };
     this.refreshLearning();
     this.saveLearning();
@@ -136,6 +138,7 @@ export const learningActions = {
   learningUtil(action){
     if(this.solved) return;
     this.ui.hideHint();
+    this.ui.setFocus('query');
     if(action === 'after'){
       this.learningCursor = { index: Math.min(this.built.length, this.learningCursor.index + (this.learningCursor.replace ? 1 : 0)), replace: false };
     } else if(action === 'end'){

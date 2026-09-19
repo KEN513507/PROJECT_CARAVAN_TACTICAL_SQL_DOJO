@@ -195,7 +195,21 @@ export class UIManager {
 
   _wire(){
     const h = this.h;
+    // 表が小さいときの最初のタップは「見るため」。拡大だけして、SQLには何も入れない。
+    // 2回目以降のタップで初めて列・値が挿入される（表だけ見たい操作を潰さないため）。
+    this.el.schemaPanel.addEventListener('click', e => {
+      if(!document.body.classList.contains('learning-ui')) return;
+      if(document.body.dataset.focus !== 'source'){
+        this.setFocus('source');
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+    this.el.monitor.parentElement.addEventListener('click', () => {
+      if(document.body.classList.contains('learning-ui')) this.setFocus('query');
+    });
     this.el.utilBar.addEventListener('click', e => {
+      this.setFocus('query');
       const b = e.target.closest('.util'); if(!b) return;
       h.onUtil(b.getAttribute('data-util'));
     });
@@ -318,17 +332,26 @@ export class UIManager {
     this.el.zoneResult.querySelector('.zone-title').textContent = '照会結果';
     this.el.zoneComm.querySelector('.zone-title').textContent = '作業記録';
     this.el.utilBar.innerHTML = [
-      ['after', '選択語の後に追加'], ['end', '末尾に追加'], ['remove', '選択語を削除'], ['clear', '全消去']
+      // 折り返さない長さに揃える（アイコン＋短語）
+      ['after', '→ 後ろ'], ['end', '⇥ 末尾'], ['remove', '⌫ 削除'], ['clear', '✕ 全消去']
     ].map(([action, label]) => `<button type="button" data-edit="${action}">${label}</button>`).join('');
     this.el.utilBar.querySelectorAll('[data-edit]').forEach(b => {
       b.onclick = () => this.h.onLearningUtil(b.dataset.edit);
     });
   }
 
-  renderLearningGuide(text){
-    let guide = document.getElementById('learningGuide');
-    if(!guide){ guide = document.createElement('div'); guide.id = 'learningGuide'; this.el.mission.appendChild(guide); }
-    guide.textContent = text;
+  // FOCUS CONTRACT: 今操作しているエリアだけを大きく見せる。
+  //   source = 表を読んでいる   / query = SQLを書いている
+  // 表のセル・見出しをタップしても source のまま（連続して列を選べる）。
+  setFocus(area){
+    if(document.body.dataset.focus === area) return;
+    document.body.dataset.focus = area;
+  }
+
+  // 案内文は常時表示しない。同じ文言はヒントの1段目から出せる（全ミッション共通）。
+  renderLearningGuide(){
+    const guide = document.getElementById('learningGuide');
+    if(guide) guide.remove();
   }
 
   renderLearningSource(name, table, note){
@@ -339,7 +362,7 @@ export class UIManager {
       <div class="learning-source-scroll"><table class="mini"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>
       <div class="learning-source-note">${esc(note)}</div>`;
     this.el.schemaPanel.querySelectorAll('[data-source-col]').forEach(b => {
-      b.onclick = () => this.h.onToken(table.cols[Number(b.dataset.sourceCol)], 'col');
+      b.onclick = () => { this.setFocus('source'); this.h.onToken(table.cols[Number(b.dataset.sourceCol)], 'col'); };
     });
     this.el.schemaPanel.querySelectorAll('[data-source-row]').forEach(b => {
       b.onclick = () => {
@@ -358,7 +381,7 @@ export class UIManager {
     this.el.monitor.innerHTML = parts + (!cursor.replace && cursor.index >= tokens.length ? '<span class="insert-cursor" aria-label="追加位置">▏</span>' : '');
     this.el.monitor.setAttribute('aria-label', 'SQL。語句を選択すると置き換えられます');
     this.el.monitor.querySelectorAll('[data-query-index]').forEach(b => {
-      b.onclick = () => this.h.onQueryToken(Number(b.dataset.queryIndex));
+      b.onclick = () => { this.setFocus('query'); this.h.onQueryToken(Number(b.dataset.queryIndex)); };
     });
     this.el.utilBar.querySelector('[data-edit="after"]').disabled = disabled || !cursor.replace;
     this.el.utilBar.querySelector('[data-edit="remove"]').disabled = disabled || !tokens.length;
@@ -395,7 +418,7 @@ export class UIManager {
     this.el.tokenPad.classList.remove('locked');
 
     this.el.tokenPad.querySelectorAll('.tok').forEach(b => {
-      b.addEventListener('click', () => this.h.onToken(b.getAttribute('data-token'), b.getAttribute('data-kind')));
+      b.addEventListener('click', () => { this.setFocus('query'); this.h.onToken(b.getAttribute('data-token'), b.getAttribute('data-kind')); });
     });
   }
 

@@ -1660,6 +1660,30 @@ body.learning-ui #feedback { order:5; flex:0 0 auto; font-size:12px; line-height
 body.learning-ui #feedback:empty { display:none; }
 body.learning-ui #resultPanel { order:6; max-height:95px; overflow:auto; flex:0 1 auto; }
 /* トークン選択は操作の主役。狭く固定しない（以前は105px固定で6個中2個しか見えなかった）。 */
+/* ============ FOCUS CONTRACT ============
+   今操作しているエリアだけを大きく見せる。
+     data-focus="source" : 表を読んでいる  → 表が全行、SQL欄は2行、編集ボタンは隠す
+     data-focus="query"  : SQLを書いている → 表は見出しのみ、SQL欄が全文、編集ボタンを出す
+   表のセル・見出しをタップしても source のまま（連続して列を選べる）。 */
+body.learning-ui #schemaPanel,
+body.learning-ui #monitorWrap { transition:max-height .18s ease, min-height .18s ease; }
+
+/* ---- 表を読んでいるとき ---- */
+body.learning-ui[data-focus="source"] #schemaPanel { flex:1 1 auto; min-height:196px; max-height:56vh; }
+body.learning-ui[data-focus="source"] #monitorWrap { flex:0 0 auto; min-height:0; max-height:74px; }
+body.learning-ui[data-focus="source"] #monitor    { min-height:0; max-height:66px; }
+body.learning-ui[data-focus="source"] #utilBar    { display:none; }
+/* 表を読んでいる間はトークン欄を主役にしない。下限を下げて表へ高さを譲る。 */
+body.learning-ui[data-focus="source"] #tokenPad   { min-height:88px; }
+
+/* ---- SQLを書いているとき ---- */
+/* 表は見出し行だけ残す。どの列があるかは失わない。 */
+body.learning-ui[data-focus="query"] #schemaPanel { flex:0 0 auto; min-height:0; max-height:112px; }
+/* 空白を先に確保せず、SQLの長さぶんだけ伸ばす。余った高さはトークン欄へ回す。 */
+body.learning-ui[data-focus="query"] #monitorWrap { flex:0 1 auto; min-height:52px; max-height:38vh; }
+body.learning-ui[data-focus="query"] #monitor     { height:auto; min-height:44px; max-height:34vh; }
+body.learning-ui[data-focus="query"] #utilBar     { display:flex; }
+
 body.learning-ui #tokenPad { order:7; flex:1 1 auto; min-height:182px; max-height:48vh; overflow:auto; }
 /* 分類ラベルを行内へ寄せ、縦積みで高さを食わないようにする。
    M01(6トークン)が1画面に収まることを優先する。 */

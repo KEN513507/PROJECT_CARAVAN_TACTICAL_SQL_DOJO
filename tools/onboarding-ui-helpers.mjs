@@ -10,8 +10,16 @@ export const token = (page, text) => page.locator('#tokenPad .tok').filter({ has
 export async function tap(page, ...texts){ for(const text of texts) await token(page, text).click(); }
 export async function select(page, text){ await page.locator('#monitor').getByRole('button', { name: text, exact: true }).last().click(); }
 export async function replace(page, old, value){ await select(page, old); await tap(page, value); }
-export async function append(page, ...texts){ await page.locator('[data-edit="end"]').click(); await tap(page, ...texts); }
-export const source = (page, col) => page.locator(`[data-source-col="${col}"]`).click();
+// 編集ボタンは「SQL欄を操作しているとき」だけ出る。実プレイと同じくSQL欄へ入ってから押す。
+export async function focusQuery(page){ await page.locator('#monitorWrap').click({ position:{ x:5, y:5 } }); }
+export async function append(page, ...texts){ await focusQuery(page); await page.locator('[data-edit="end"]').click(); await tap(page, ...texts); }
+// 表が小さいときは1回目のタップで拡大されるだけ。実プレイと同じく、拡大してから選ぶ。
+export async function focusSource(page){
+  if(await page.evaluate(() => document.body.dataset.focus) !== 'source'){
+    await page.locator('.learning-source-title').click();
+  }
+}
+export async function source(page, col){ await focusSource(page); await page.locator(`[data-source-col="${col}"]`).click(); }
 export async function readSql(page){ return (await page.locator('#monitor .query-token').allTextContents()).join(' '); }
 export async function run(page){
   await page.locator('#runBtn').click();
