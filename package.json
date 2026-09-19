@@ -2,6 +2,8 @@
   "name": "project-caravan-tactical-sql-dojo",
   "private": true,
   "scripts": {
+    "onboarding:test": "node --test tools/onboarding-test.mjs",
+    "onboarding:ui": "node tools/onboarding-ui-test.mjs",
     "beginner:test": "node tools/beginner-test.mjs",
     "beginner:ui": "node tools/beginner-ui-test.mjs",
     "overlap": "node tools/overlap-check.js",

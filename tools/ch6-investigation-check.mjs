@@ -6,6 +6,7 @@
 //   node tools/ch6-investigation-check.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload, storyStage, CAMPAIGN_LENGTH } from './campaign-index.mjs';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -36,14 +37,15 @@ async function boot(ctx, stageIndex, cleared){
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('dialog', d => d.accept());
-  await page.addInitScript(([idx, cl]) => {
+  await page.addInitScript(seed => {
     window.__NEON_TEST_CONFIG__ = { enabled: true, evidenceSilenceMs: 300 };
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-    localStorage.setItem('caravan_progress', JSON.stringify({
-      stage: idx, xp: 0, cleared: cl, clearTypes: cl.map(() => null)
-    }));
-  }, [stageIndex, cleared]);
+    // campaign: M01〜M12 を完了済みにしてから本編の該当章へ入る
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(),
+       progress: campaignProgress({ story: stageIndex, storyCleared: cleared }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
   return { page, jsErrors };
 }
@@ -112,7 +114,7 @@ async function auditViewport(browser, vpName){
     // ---- RECONSTRUCTED FACT が保持されている ----
     const e442 = await page.evaluate(() => {
       const card = [...document.querySelectorAll('.schema-card')]
-        .find(c => c.querySelector('h4').textContent.includes('EVAC_RECEPTION'));
+        .find(c => c.querySelector('summary').textContent.includes('EVAC_RECEPTION'));
       if(!card) return null;
       const tr = [...card.querySelectorAll('tbody tr')].find(r => r.textContent.includes('E442'));
       return tr ? [...tr.querySelectorAll('td')].map(t => t.textContent.trim()) : null;
@@ -144,7 +146,7 @@ async function auditViewport(browser, vpName){
     await page.screenshot({ path: path.join(shots, 'B-investigation-start.png') });
 
     // ---- source tables ----
-    const tableNames = await page.$$eval('.schema-card h4', els => els.map(e => e.textContent.trim()));
+    const tableNames = await page.$$eval('.schema-card .schema-name', els => els.map(e => e.textContent.trim()));
     check(`[${vpName}] SQL source tablesが表示される`,
       tableNames.includes('RESIDENT_CACHE') && tableNames.includes('EVAC_RECEPTION'), tableNames.join(','));
 
@@ -174,8 +176,11 @@ async function auditViewport(browser, vpName){
       check(`[${vpName}] Resultに ${v} が含まれる`, resultCells.includes(v), JSON.stringify(resultCells));
     }
     const resultCols = await page.$$eval('#zoneResultBody table.result thead th', th => th.map(t => t.textContent.trim()));
+    // Result は Data UI なので canonical display label で出る（last_sector → 最終区画 / sector → 区画）
     check(`[${vpName}] 登録上の区画と受付側の区画が同一Result上で比較できる`,
-      resultCols.includes('last_sector') && resultCols.includes('sector'), resultCols.join(','));
+      resultCols.includes('最終区画') && resultCols.includes('区画'), resultCols.join(','));
+    check(`[${vpName}] Resultの列見出しが internal identifier で出ていない`,
+      !resultCols.some(c => /^[a-z_]+$/.test(c)), resultCols.join(','));
     await page.screenshot({ path: path.join(shots, 'D-result.png') });
 
     // ---- Success 3-zone ----

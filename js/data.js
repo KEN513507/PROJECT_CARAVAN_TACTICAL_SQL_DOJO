@@ -113,7 +113,7 @@ export const STAGES = [
     hint2: 'RESIDENT_CACHEのstatusとlast_sectorをWHEREで調べ、2つの条件をANDで結びます。',
     skeleton: 'SELECT ______, ______ FROM ______ WHERE ______ = \'MISSING\' AND ______ = \'S4\'',
     prompt: '「同期喪失の直前、第4セクターにいたMISSING住民を抽出してください」── 該当する住民の resident_id と display_name を特定する。',
-    note: 'RESIDENT_CACHE は住民ごとに1行で、status（ACTIVE / MISSING）と last_sector を保持している。',
+    note: 'RESIDENT_CACHE は住民ごとに1行で、状態（ACTIVE / MISSING）と最終区画を保持している。',
     tables: ['RESIDENT_CACHE'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('WHERE', 'clause'), T('AND', 'and'),
@@ -143,7 +143,7 @@ export const STAGES = [
     hint2: 'SUPPLY_TRANSFER_0911をdestinationでGROUP BYし、SUM(quantity)にASで別名を付けます。',
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______',
     prompt: '「どこへ、合計いくつ送られたか」── 宛先ごとの物資の総量を、列名 total_quantity として求める。',
-    note: 'SUPPLY_TRANSFER_0911 は転送1件ごとに1行で、item・quantity・destination を持つ。同じ宛先への転送は複数行に分かれている。',
+    note: 'SUPPLY_TRANSFER_0911 は転送1件ごとに1行で、品目・数量・行き先を持つ。同じ行き先への転送は複数行に分かれている。',
     tables: ['SUPPLY_TRANSFER_0911'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('AS', 'as'),
@@ -171,7 +171,7 @@ export const STAGES = [
     hint2: 'EVAC_BATCH_0911をsectorでGROUP BYし、HAVINGでSUM(people)を30と比較します。',
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______ HAVING SUM(______) > ______',
     prompt: '「合計人数が30人を超えたセクターを抽出してください」── セクターごとの移送人数の合計を列名 total_people として求め、30人を超えたセクターだけを残す。',
-    note: 'EVAC_BATCH_0911 は移送バッチごとに1行で、sector と people を持つ。同じセクターへの移送は複数のバッチに分かれている。',
+    note: 'EVAC_BATCH_0911 は移送バッチごとに1行で、区画と人数を持つ。同じ区画への移送は複数のバッチに分かれている。',
     tables: ['EVAC_BATCH_0911'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('HAVING', 'clause'), T('AS', 'as'),
@@ -201,7 +201,7 @@ export const STAGES = [
     hint2: 'PERSON_INDEX AS pとACCESS_LOG AS aをcredential_idでINNER JOINし、WHEREでゲートを絞ります。',
     skeleton: 'SELECT ______, ______, ______ FROM ______ AS p INNER JOIN ______ AS a ON p.______ = a.______ WHERE a.______ = \'S4-P6\'',
     prompt: '「結合してください」── S4-P6 へ入った人物の氏名・ゲート・時刻を特定する。',
-    note: 'PERSON_INDEX には氏名と credential_id がある。ACCESS_LOG には credential_id と通過記録（ゲート・時刻）があるが、氏名は無い。',
+    note: 'PERSON_INDEX には戸籍名と認証IDがある。ACCESS_LOG には認証IDと通過記録（ゲート・時刻）があるが、戸籍名は無い。',
     tables: ['PERSON_INDEX', 'ACCESS_LOG'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('INNER JOIN', 'clause'), T('ON', 'clause'),
@@ -251,7 +251,7 @@ export const STAGES = [
     hint2: 'RESIDENT_CACHE AS c と EVAC_RECEPTION AS e を c.resident_id = e.resident_id で INNER JOIN し、WHERE で R005 に絞ります。',
     skeleton: "SELECT ______, ______, ______, ______, ______ FROM ______ AS c INNER JOIN ______ AS e ON c.______ = e.______ WHERE c.______ = 'R005'",
     prompt: '「復元した R005 の記録を、住民記録と照合してください」── R005 について、住民記録と受付記録の両方を1つの結果に並べる。',
-    note: 'RESIDENT_CACHE は住民ごとの登録情報（display_name / status / last_sector）を持つ。EVAC_RECEPTION は受付1件ごとに端末・区画・受付時刻を持つ。両者は resident_id で対応する。',
+    note: 'RESIDENT_CACHE は住民ごとの登録情報（表示名・状態・最終区画）を持つ。EVAC_RECEPTION は受付1件ごとに端末ID・区画・受付時刻を持つ。両者は住民IDで対応する。',
     tables: ['RESIDENT_CACHE', 'EVAC_RECEPTION'],
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('INNER JOIN', 'clause'), T('ON', 'clause'),

@@ -107,6 +107,23 @@ export class ChapterSession {
     return true;
   }
 
+  replaceDraft(tokens){
+    if(![Phase.AWAITING_QUERY, Phase.QUERY_DRAFTING, Phase.QUERY_REJECTED].includes(this.phase)) return false;
+    this.draft.tokens = tokens.map(token => ({ ...token }));
+    this._transition(tokens.length ? Phase.QUERY_DRAFTING : Phase.AWAITING_QUERY);
+    this._emit('QueryDraftReplaced', this.draft);
+    return true;
+  }
+
+  submitQuery(){
+    if(![Phase.QUERY_DRAFTING, Phase.QUERY_REJECTED].includes(this.phase) || !this.draft.tokens.length) return false;
+    this.prediction = null;
+    this.executionCount++;
+    this._transition(Phase.QUERY_EXECUTING);
+    this._emit('QuerySubmitted', this.draft);
+    return true;
+  }
+
   // ---- Execution flow ----
   submit(){
     if(this.phase !== Phase.QUERY_DRAFTING) return false;

@@ -93,53 +93,89 @@ button{ font-family:inherit; -webkit-appearance:none; appearance:none; }
 #muteBtn:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
 @keyframes pulse{ 50%{ opacity:.3; } }
 
-/* ---- SCHEMA ---- */
+/* ---- SCHEMA (SQL WORKSPACE VISIBILITY CONTRACT) ----
+   §2 縦積み / §3 Table Card + Accordion / §4 フォント縮小と省略で幅を解決しない
+   §6 SQL入力中もSource Dataへ即アクセスできるよう、この領域だけが内部scrollする */
 #schemaPanel{
   flex:0 0 auto;
   display:flex;
-  gap:5px;
+  flex-direction:column;   /* §2: 2表・3表を横並びにしない */
+  gap:6px;
+  max-height:34vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
 }
 .schema-card{
-  flex:1 1 0;
+  flex:0 0 auto;
   min-width:0;
-  min-height:0;
   background:#0b1220;
   border:1px solid #131c2e;
   border-radius:8px;
-  padding:4px 5px 5px;
 }
-.schema-card h4{
-  margin:0 0 3px;
-  font-size:9.5px;
+/* §3 Header: ▸/▼ + 内部識別子（列見出しと同じ表記） */
+.schema-card > summary{
+  list-style:none;
+  cursor:pointer;
+  display:block;
+  padding:12px 10px;
+  min-height:44px;   /* タップ領域44px以上 */
+  font-size:13px;
   font-weight:800;
   color:var(--cyan);
-  letter-spacing:.05em;
-  /* DISPLAY TERMINOLOGY CONTRACT rule 8: 表示名を省略しない。折り返して全文を出す。 */
+  letter-spacing:.04em;
   white-space:normal;
   word-break:break-all;
+}
+.schema-card > summary::-webkit-details-marker{ display:none; }
+.schema-card > summary::before{
+  content:'▸ ';
+  color:#64748b;
+  font-weight:900;
+}
+.schema-card[open] > summary::before{ content:'▾ '; }
+.schema-card .schema-body{ padding:0 8px 8px; }
+.schema-rows{ float:right; font-size:11px; font-weight:700; color:#64748b; letter-spacing:0; }
+/* §5 表示ラベル ↔ SQL識別子の対応。常時併記はせず、必要なときだけ開く。 */
+.schema-map{ margin-top:6px; }
+.schema-map > summary{
+  list-style:none; cursor:pointer; display:block;
+  padding:8px 2px; min-height:36px;
+  font-size:12px; font-weight:700; color:#64748b;
+}
+.schema-map > summary::-webkit-details-marker{ display:none; }
+.schema-map > summary::before{ content:'▸ '; }
+.schema-map[open] > summary::before{ content:'▾ '; }
+.schema-map-body{ padding:2px 0 4px; }
+.schema-map-row{ display:flex; gap:8px; align-items:baseline; padding:2px 0; }
+.schema-map-l{ flex:0 0 42%; font-size:13px; color:#e2e8f0; font-weight:700; }
+.schema-map-i{
+  flex:1 1 auto; min-width:0;
+  font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size:13px; color:#7dd3fc; word-break:normal; overflow-wrap:anywhere;
+}
+.schema-card .schema-cols{
+  font-size:11px; color:#64748b; font-weight:700; padding:0 0 4px;
 }
 table.mini{
   width:100%;
   border-collapse:collapse;
   table-layout:fixed;
 }
+/* §4: 省略しない。折り返して全文を出す。13px未満にしない。 */
 table.mini th,table.mini td{
-  font-size:9px;
+  font-size:13px;
   line-height:1.35;
-  padding:1px 2px;
+  padding:3px 4px;
   text-align:left;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+  white-space:normal;
+  word-break:normal;
+  overflow-wrap:anywhere;
+  overflow:visible;
+  text-overflow:clip;
   border-bottom:1px solid #101a2c;
 }
 table.mini th{
-  /* rule 8: 列名は省略しない */
-  white-space:normal;
-  word-break:break-all;
-  overflow:visible;
-  text-overflow:clip;
-  line-height:1.2;
   color:#7dd3fc;
   font-weight:800;
   background:#0f172a;
@@ -149,13 +185,13 @@ table.mini td{ color:#cbd5e1; }
 table.mini td.pk{ color:var(--amber); font-weight:700; }
 
 @media (min-width:768px){
-  .schema-card h4{ font-size:12px; }
+  .schema-card > summary{ font-size:14px; }
   table.mini th,table.mini td{ font-size:13px; padding:4px 6px; }
   .group-label{ font-size:11px; }
   .tok{ padding:10px 14px; font-size:14px; }
 }
 @media (min-width:1280px){
-  .schema-card h4{ font-size:14px; }
+  .schema-card > summary{ font-size:15px; }
   table.mini th,table.mini td{ font-size:14px; padding:5px 8px; }
 }
 
@@ -1042,10 +1078,12 @@ body.ch1-ui #mission::after{
 }
 
 /* ---- Schema: CH1の7行が全部読める ---- */
-body.ch1-ui #schemaPanel{ order:2; flex:0 0 auto; }
+/* CH1はチュートリアル章。Token Padを最優先で確保し、Source Tableは内部scrollで参照する。 */
+body.ch1-ui #schemaPanel{ order:2; flex:0 0 auto; max-height:22vh; }
 body.ch1-ui .schema-card{ padding:5px 7px; }
-body.ch1-ui .schema-card h4{ font-size:11px; margin-bottom:3px; }
-body.ch1-ui table.mini th, body.ch1-ui table.mini td{ font-size:11px; line-height:1.3; padding:1px 4px; }
+body.ch1-ui .schema-card > summary{ font-size:13px; }
+/* §4: 幅不足をフォント縮小で解決しない。13px未満にしない。 */
+body.ch1-ui table.mini th, body.ch1-ui table.mini td{ font-size:13px; line-height:1.35; padding:3px 4px; }
 
 /* ---- SQL Monitor ---- */
 body.ch1-ui #monitorWrap{ order:3; flex:0 0 auto; min-height:0; overflow:visible; }
@@ -1573,3 +1611,53 @@ body[data-workspace="success"] #runBtn{ flex:1 1 auto; }
   font-size:14px; line-height:1.6; color:#a3e635;
 }
 .zone.empty .zone-unread{ display:none !important; }
+
+/* Canonical M01–M12 workspace: source remains beside the editable query. */
+body.learning-ui #app { display:flex; flex-direction:column; gap:5px; overflow:hidden; max-width:920px; margin:0 auto; }
+body.learning-ui [hidden] { display:none !important; }
+body.learning-ui #hud { order:0; min-height:44px; }
+body.learning-ui #stageLabel, body.learning-ui #muteBtn { min-height:44px; }
+body.learning-ui #mission { order:1; flex:0 0 auto; padding:6px 10px; }
+body.learning-ui #missionLevel { font-size:12px; color:var(--cyan); }
+body.learning-ui #missionText { font-size:14px; line-height:1.4; }
+body.learning-ui #missionBrief { display:none; }
+#learningGuide { color:#94a3b8; font-size:12px; line-height:1.4; margin-top:3px; }
+body.learning-ui #schemaPanel { order:2; flex:1 1 190px; min-height:110px; max-height:290px; display:flex; flex-direction:column; overflow:hidden; border:1px solid #334155; border-radius:8px; }
+.learning-source-title { display:flex; justify-content:space-between; padding:5px 8px; color:#67e8f9; font-size:13px; }
+.learning-source-title span { font-size:11px; color:#94a3b8; }
+.learning-source-scroll { overflow:auto; min-height:0; flex:1; }
+.learning-source-scroll table { width:100%; border-collapse:collapse; }
+.learning-source-scroll th { position:sticky; top:0; background:#0f172a; }
+.learning-source-scroll td, .learning-source-scroll th { padding:0 4px !important; }
+.learning-source-scroll button { width:100%; min-height:44px; background:none; border:0; color:inherit; font-size:14px; text-align:left; }
+.learning-source-scroll th button { color:#67e8f9; }
+.learning-source-scroll button:hover { background:#164e63; }
+.learning-source-note { flex:0 0 auto; padding:4px 8px; color:#94a3b8; font-size:11px; }
+body.learning-ui #monitorWrap { order:3; flex:0 1 auto; min-height:60px; overflow:auto; max-height:200px; }
+body.learning-ui #monitor { height:auto; min-height:56px; max-height:115px; overflow:auto; padding:5px; font-size:14px; }
+.query-token { display:inline-block; min-width:30px; min-height:44px; padding:4px 6px; margin:2px 0; font:inherit; font-family:monospace; color:#e2e8f0; background:#0f172a; border:1px solid #334155; border-radius:5px; }
+.query-token.selected { background:#164e63; border-color:#22d3ee; box-shadow:0 0 0 1px #22d3ee; }
+.query-token.tk-slot { color:#fbbf24; border-style:dashed; }
+.insert-cursor { color:#22d3ee; font-weight:900; }
+body.learning-ui #hintLine { max-height:90px; overflow:auto; font-size:13px; white-space:pre-wrap; }
+body.learning-ui #utilBar { order:4; display:flex; gap:4px; flex:0 0 auto; }
+body.learning-ui #utilBar button { flex:1; min-height:44px; padding:3px; font-size:11px; border:1px solid #334155; border-radius:6px; background:#0f172a; color:#cbd5e1; }
+body.learning-ui #feedback { order:5; flex:0 0 auto; font-size:12px; line-height:1.4; padding:0 6px; }
+body.learning-ui #feedback:empty { display:none; }
+body.learning-ui #resultPanel { order:6; max-height:95px; overflow:auto; flex:0 1 auto; }
+body.learning-ui #tokenPad { order:7; flex:0 1 105px; min-height:60px; max-height:135px; overflow:auto; }
+body.learning-ui .group-label { font-size:10px; margin:2px 0; }
+body.learning-ui .token-group { margin-bottom:3px; }
+body.learning-ui .tok { min-height:44px; font-size:13px; }
+body.learning-ui #actionBar { order:9; display:flex; flex:0 0 auto; gap:5px; }
+body.learning-ui #actionBar .act { min-height:48px; font-size:14px; }
+body.learning-ui #runBtn { flex:2; }
+body.learning-ui #undoBtn, body.learning-ui #hintBtn { flex:1; }
+body.learning-ui #successPanel { order:2; }
+body.learning-ui button:focus-visible { outline:2px solid #fbbf24; outline-offset:1px; }
+body.learning-ui button:disabled { opacity:.45; }
+@media (min-width:700px) {
+  body.learning-ui #app { height:100dvh; padding:12px 18px; }
+  body.learning-ui #schemaPanel { max-height:340px; }
+  body.learning-ui #tokenPad { max-height:180px; flex-basis:150px; }
+}

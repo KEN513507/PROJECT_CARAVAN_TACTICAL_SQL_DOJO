@@ -9,6 +9,7 @@
 //   node tools/relation-ui-check.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload, storyStage } from './campaign-index.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -22,7 +23,7 @@ const VIEWPORTS = [
   { name: 'iPhone SE',  width: 375, height: 667, slug: 'iphone-se' },
   { name: 'iPhone 16e', width: 393, height: 852, slug: 'iphone-16e' }
 ];
-const RELATION_STAGE_INDEX = 4;
+const RELATION_STAGE_INDEX = 4;   // 本編CHAPTER 5（campaign indexは storyStage() で解決する）
 
 const MIN_FONT = 13;        // 13px未満は禁止
 const MIN_VALUE_FONT = 16;  // 重要値の下限
@@ -164,13 +165,15 @@ async function open(browser, vp){
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('dialog', d => d.accept());
-  await page.addInitScript(idx => {
+  await page.addInitScript(seed => {
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-    localStorage.setItem('caravan_progress', JSON.stringify({
-      stage: idx, xp: 0, cleared: [true, true, true, true, false], clearTypes: [null, null, null, null, null]
-    }));
-  }, RELATION_STAGE_INDEX);
+    // campaign は M01〜M12 + CHAPTER 1〜6。学習章を完了済みにしてから本編の該当章へ入る。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(),
+       progress: campaignProgress({ story: RELATION_STAGE_INDEX,
+         storyCleared: [true, true, true, true, false, false] }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#relationPanel.show', { timeout: 30000 });
   return { ctx, page, jsErrors };
@@ -285,9 +288,13 @@ async function runViewport(browser, vp){
     check(`${tag} E: Relation Evidenceが表示される`, ev.relationVisible);
     check(`${tag} E: RECORD RECONSTRUCTED が主役`,
       ev.cards.includes('RECORD RECONSTRUCTED'), JSON.stringify(ev.cards));
-    check(`${tag} E: 復元されたE442の3項目が出る`,
-      ev.fields.some(f => /resident_id R005/.test(f)) && ev.fields.some(f => /T-S4-03/.test(f))
+    // DISPLAY TERMINOLOGY CONTRACT: Relation Task は Data UI なので canonical display label を使う
+    // （internal identifier の生表示はしない）。
+    check(`${tag} E: 復元されたE442の主要項目が出る`,
+      ev.fields.some(f => /住民ID R005/.test(f)) && ev.fields.some(f => /T-S4-03/.test(f))
       && ev.fields.some(f => /23:09/.test(f)), JSON.stringify(ev.fields));
+    check(`${tag} E: 項目名が internal identifier で出ていない`,
+      !ev.fields.some(f => /resident_id|terminal_id|received_at/.test(f)), JSON.stringify(ev.fields));
     check(`${tag} E: SOURCE RECORDが根拠として出る`,
       ev.cards.includes('SOURCE RECORD') && ev.source.some(f => /R005/.test(f)), JSON.stringify(ev.source));
     // FIX B: SQL compose UI が一切出ていないこと
@@ -315,11 +322,15 @@ async function queryRegression(browser){
   const page = await ctx.newPage();
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
-  page.on('dialog', d => d.dismiss());
-  await page.addInitScript(() => {
+  // 続きから再開するか聞かれるので受諾する（拒否すると campaign 先頭のM01へ戻る）
+  page.on('dialog', d => d.accept());
+  await page.addInitScript(seed => {
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-  });
+    // 非退行の対象は本編CHAPTER 1。campaign先頭(M01)ではないので明示的に本編へ入る。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(), progress: campaignProgress({ story: 0 }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
   const st = await page.evaluate(() => ({

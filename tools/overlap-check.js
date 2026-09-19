@@ -122,10 +122,15 @@ async function checkViewport(browser, viewport) {
   const page = await context.newPage();
   try {
     // Opening story / tutorial は既知の待ち時間問題があるため、既視聴として事前セットしてスキップする。
-    await page.addInitScript(() => {
+    const ci = await import(require('url').pathToFileURL(require('path').resolve(__dirname, 'campaign-index.mjs')).href);
+    await page.addInitScript(seed => {
       localStorage.setItem('caravan_intro_seen', 'true');
       localStorage.setItem('caravan_tutorial_seen', 'true');
-    });
+      // campaign は M01〜M12 + CHAPTER 1〜6。重なり検査は本編CHAPTER 1から行う。
+      localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+      localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+    }, { learning: ci.learningCompletedPayload(), progress: ci.campaignProgress({ story: 0 }) });
+    page.on('dialog', d => d.accept());
     await page.goto(URL, { waitUntil: 'networkidle' });
     await runFlow(page);
     const overlaps = await collectOverlaps(page);

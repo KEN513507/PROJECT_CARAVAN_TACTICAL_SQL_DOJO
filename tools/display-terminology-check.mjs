@@ -1,15 +1,27 @@
 // tools/display-terminology-check.mjs
-// DISPLAY TERMINOLOGY CONTRACT ゲート。
-//   rule 1 端末別に表示名を変えない        → iPhone SE / 16e で同一ラベル集合
-//   rule 2 1 field/table = 1 canonical label → 同一識別子が画面ごとに別表記にならない
-//   rule 3 全UIで同じ表記                   → 表示ラベル = 内部識別子（漢字/カナ/英字の揺れ禁止）
-//   rule 6 Table/Result/Evidence/Relation/Note は canonical label を使う
-//   rule 8 省略表示（credenti...）を通常状態として許容しない
-// SQL Editor / monitor / token pad は rule 5 により内部識別子のまま（監査対象外）。
+// DISPLAY TERMINOLOGY CONTRACT ゲート（2 namespace 版）。
+//
+// 旧版は「display label = internal identifier」を要求していたが、これは誤仕様だった。
+// 正しくは 2 つの namespace が 1対1 で対応する:
+//   INTERNAL SQL IDENTIFIER : SQL Editor / monitor / token pad
+//   CANONICAL DISPLAY LABEL : Table / Result / Evidence / Relation Task / Schema Viewer
+//
+// 検証すること:
+//   A identifier → display label が 1対1（両方向で衝突しない）
+//   B 同一fieldの display label が全UIで同じ（画面ごとに揺れない）
+//   C SQL Editor では identifier を使う
+//   D Data UI では display label を使う（identifier の生表示をしない）
+//   E Result でも同じ display label
+//   F 端末差で表示名が変わらない
+//   G 省略表示（credenti...）を通常状態にしない
+//
 // 事前に `python -m http.server 8000` (または UX_BASE_URL) が必要。
 //   node tools/display-terminology-check.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload, storyStage, CAMPAIGN_LENGTH } from './campaign-index.mjs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const BASE_URL = process.env.UX_BASE_URL || 'http://127.0.0.1:8000/';
 const VIEWPORTS = {
@@ -17,13 +29,12 @@ const VIEWPORTS = {
   'iphone-16e': { width: 393, height: 852 }
 };
 
-// CH4 の正解（INNER JOIN）。CH4 成功画面まで進めるために使う。
 const CH4_SOLUTION = ['SELECT', 'p.legal_name', 'a.gate', 'a.time', 'FROM', 'PERSON_INDEX',
   'AS', 'p', 'INNER JOIN', 'ACCESS_LOG', 'AS', 'a', 'ON', 'p.credential_id', '=',
   'a.credential_id', 'WHERE', 'a.gate', '=', "'S4-P6'"];
 
-// canonical label は内部識別子そのもの。装飾や言い換えを検出するための禁止パターン。
-const DECORATION = /[📋📊表（）()、。]|^\s|\s$/;
+// Data UI に internal identifier が生で出ていないかを見るためのパターン
+const LOOKS_LIKE_IDENTIFIER = /^[a-z][a-z0-9_]*$/;
 
 let failCount = 0;
 function check(label, ok, detail){
@@ -36,16 +47,15 @@ async function boot(ctx, stageIndex){
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('dialog', d => d.accept());
-  await page.addInitScript(idx => {
+  await page.addInitScript(seed => {
     window.__NEON_TEST_CONFIG__ = { enabled: true, evidenceSilenceMs: 300 };
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-    localStorage.setItem('caravan_progress', JSON.stringify({
-      stage: idx, xp: 0,
-      cleared: [true, true, true, true, false],
-      clearTypes: [null, null, null, null, null]
-    }));
-  }, stageIndex);
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(),
+       progress: campaignProgress({ story: stageIndex,
+         storyCleared: [true, true, true, true, false, false] }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
   const ov = await page.waitForSelector('#storyOverlay.show', { timeout: 4000 }).catch(() => null);
   if(ov) await page.click('#storyContinueBtn');
@@ -54,7 +64,6 @@ async function boot(ctx, stageIndex){
   return { page, jsErrors };
 }
 
-// 表示ラベル要素を「文言 + 省略されているか」で採取する。
 async function collect(page, screen, selector, kind){
   return page.$$eval(selector, (els, meta) => els
     .filter(e => e.checkVisibility ? e.checkVisibility() : true)
@@ -63,7 +72,6 @@ async function collect(page, screen, selector, kind){
       kind: meta.kind,
       selector: meta.selector,
       text: e.textContent.trim(),
-      // 実際に切り詰められているか（ellipsis / clip を問わず）
       clipped: e.scrollWidth > e.clientWidth + 1
     })), { screen, kind, selector });
 }
@@ -72,13 +80,28 @@ async function auditViewport(browser, vpName){
   const ctx = await browser.newContext({ viewport: VIEWPORTS[vpName], hasTouch: true, isMobile: true });
   const labels = [];
   const errors = [];
+  let editorTokens = [];
   try {
-    // ---- CH4: Query 画面（schema）→ Success 画面（ZONE 1 / ZONE 2） ----
+    // ---- CH4: Query 画面 → Success 画面 ----
     {
       const { page, jsErrors } = await boot(ctx, 3);
       await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
-      labels.push(...await collect(page, 'QUERY', '.schema-card h4', 'table'));
+      labels.push(...await collect(page, 'QUERY', '.schema-card .schema-name', 'table'));
+      // Table Card はデフォルトで畳まれることがあるので開いてから採取する
+      const cards = await page.$$('.schema-card > summary');
+      for(const c of cards){
+        const open = await c.evaluate(e => e.parentElement.open);
+        if(!open) await c.click();
+      }
+      await page.waitForTimeout(200);
       labels.push(...await collect(page, 'QUERY', '.schema-card table.mini th', 'field'));
+      // C: SQL Editor 側は internal identifier
+      editorTokens = await page.$$eval('#tokenPad .tok', els => els.map(e => e.textContent.trim()));
+      // §5 の対応表（identifier を見せてよい唯一の場所）
+      const maps = await page.$$('.schema-map > summary');
+      for(const m of maps) await m.click();
+      await page.waitForTimeout(200);
+      labels.push(...await collect(page, 'SCHEMA_MAP', '.schema-map-l', 'field'));
 
       for(const t of CH4_SOLUTION){
         const el = await page.$(`.tok[data-token="${t}"]`);
@@ -93,9 +116,11 @@ async function auditViewport(browser, vpName){
         null, { timeout: 15000 });
 
       await page.click('.zone-header[data-zone="problem"]');
+      await page.waitForTimeout(250);
       labels.push(...await collect(page, 'SUCCESS_ZONE1', '#zoneProblemBody .zone-table h5', 'table'));
       labels.push(...await collect(page, 'SUCCESS_ZONE1', '#zoneProblemBody .zone-grid th', 'field'));
       await page.click('.zone-header[data-zone="result"]');
+      await page.waitForTimeout(250);
       labels.push(...await collect(page, 'SUCCESS_ZONE2', '#zoneResultBody .zone-grid th', 'field'));
       errors.push(...jsErrors);
       await page.close();
@@ -117,10 +142,33 @@ async function auditViewport(browser, vpName){
   } finally {
     await ctx.close();
   }
-  return { labels, errors };
+  return { labels, errors, editorTokens };
 }
 
 (async () => {
+  const reg = await import(pathToFileURL(path.resolve('js/display-labels.js')).href);
+  const { FIELD_LABELS, LABEL_TO_FIELD } = reg;
+  const data = await import(pathToFileURL(path.resolve('js/data.js')).href);
+
+  // ================= A: 1対1 対応（ブラウザ不要の静的検証） =================
+  {
+    const ids = Object.keys(FIELD_LABELS);
+    const vals = ids.map(i => FIELD_LABELS[i]);
+    check('[A] identifier → display label が重複しない',
+      new Set(vals).size === vals.length,
+      vals.filter((v, i) => vals.indexOf(v) !== i).join(','));
+    check('[A] display label → identifier の逆引きが成立する',
+      Object.keys(LABEL_TO_FIELD).length === ids.length);
+    check('[A] identifier と display label が別namespaceである（同一文字列でない）',
+      ids.every(i => FIELD_LABELS[i] !== i),
+      ids.filter(i => FIELD_LABELS[i] === i).join(','));
+
+    const missing = new Set();
+    Object.values(data.TABLES).forEach(t => t.cols.forEach(c => { if(!FIELD_LABELS[c]) missing.add(c); }));
+    data.STAGES.forEach(s => { if(s.resultSet) s.resultSet.cols.forEach(c => { if(!FIELD_LABELS[c]) missing.add(c); }); });
+    check('[A] 全ての実列・結果列に display label がある', missing.size === 0, [...missing].join(','));
+  }
+
   const browser = await chromium.launch();
   const perVp = {};
   try {
@@ -135,49 +183,65 @@ async function auditViewport(browser, vpName){
   } finally {
     await browser.close();
   }
+
   if(failCount === 0){
     const A = perVp['iphone-se'].labels, B = perVp['iphone-16e'].labels;
     const sig = ls => ls.map(l => `${l.screen}|${l.kind}|${l.text}`).sort().join('\n');
 
-    // ---- rule 1: 端末別に表示名を変えない ----
-    const onlyA = sig(A).split('\n').filter(x => !sig(B).split('\n').includes(x));
-    const onlyB = sig(B).split('\n').filter(x => !sig(A).split('\n').includes(x));
-    check('[rule 1] SE と 16e で表示ラベルが一致する',
-      onlyA.length === 0 && onlyB.length === 0,
-      onlyA.concat(onlyB).slice(0, 4).join(' / '));
+    // ---- F: 端末差で表示名が変わらない ----
+    const sa = sig(A).split('\n'), sb = sig(B).split('\n');
+    const onlyA = sa.filter(x => !sb.includes(x));
+    const onlyB = sb.filter(x => !sa.includes(x));
+    check('[F] SE と 16e で表示ラベルが一致する',
+      onlyA.length === 0 && onlyB.length === 0, onlyA.concat(onlyB).slice(0, 4).join(' / '));
 
-    // ---- rule 8: 省略表示を通常状態として許容しない ----
+    // ---- G: 省略表示を通常状態にしない ----
     const clipped = A.concat(B).filter(l => l.clipped);
-    check('[rule 8] 省略された表示ラベルが無い', clipped.length === 0,
+    check('[G] 省略された表示ラベルが無い', clipped.length === 0,
       clipped.slice(0, 6).map(l => `${l.screen}:${l.selector}"${l.text}"`).join(' / '));
 
-    // ---- rule 3 / 6: 表示ラベルは内部識別子のまま（装飾・言い換え禁止） ----
-    const decorated = A.filter(l => DECORATION.test(l.text));
-    check('[rule 3/6] 表示ラベルに装飾・和訳の混入が無い', decorated.length === 0,
-      decorated.slice(0, 6).map(l => `${l.screen}:"${l.text}"`).join(' / '));
+    // ---- D: Data UI に internal identifier が生で出ていない ----
+    // 例外は SCHEMA_MAP（対応を学ぶための場所）と table 名（SQLトークンと一致させる）。
+    const rawIds = A.filter(l => l.kind === 'field' && l.screen !== 'SCHEMA_MAP'
+      && LOOKS_LIKE_IDENTIFIER.test(l.text) && FIELD_LABELS[l.text]);
+    check('[D] Data UI の列見出しが internal identifier になっていない',
+      rawIds.length === 0, rawIds.slice(0, 6).map(l => `${l.screen}:"${l.text}"`).join(' / '));
 
-    // ---- rule 2 / 7: 1識別子 = 1 canonical label ----
-    // 同じ識別子の前置（terminal_id → terminal 等の短縮）が混在していないかを検出する。
-    const texts = [...new Set(A.map(l => l.text))];
-    const shortened = [];
-    for(const a of texts){
-      for(const b of texts){
-        if(a !== b && b.startsWith(a) && /^[a-z_]+$/.test(a) && /^[a-z_]+$/.test(b)){
-          shortened.push(`${a} ⊂ ${b}`);
-        }
-      }
-    }
-    check('[rule 2/7] 同一識別子の短縮表記が混在しない', shortened.length === 0,
-      shortened.slice(0, 6).join(' / '));
+    const unknown = A.filter(l => l.kind === 'field' && l.screen !== 'SCHEMA_MAP'
+      && !LABEL_TO_FIELD[l.text]);
+    check('[D] Data UI の列見出しが全て登録済み display label である',
+      unknown.length === 0, unknown.slice(0, 6).map(l => `${l.screen}:"${l.text}"`).join(' / '));
 
-    // ---- rule 2: 同じ field が画面をまたいで同じ表記であること（存在確認） ----
-    const fieldScreens = {};
-    for(const l of A.filter(l => l.kind === 'field')){
-      (fieldScreens[l.text] ||= new Set()).add(l.screen);
+    // ---- C: SQL Editor は internal identifier ----
+    const editor = perVp['iphone-se'].editorTokens;
+    const colTokens = editor.filter(t => /^[a-z]/.test(t) && !/[ぁ-んァ-ヶ一-龠]/.test(t));
+    check('[C] SQL Editor のトークンに display label が混入していない',
+      editor.every(t => !LABEL_TO_FIELD[t]),
+      editor.filter(t => LABEL_TO_FIELD[t]).join(','));
+    check('[C] SQL Editor が internal identifier を出している',
+      colTokens.length > 0, colTokens.slice(0, 4).join(','));
+
+    // ---- B / E: 同一fieldの display label が画面をまたいで同じ ----
+    const byField = {};
+    for(const l of A.filter(l => l.kind === 'field' && l.screen !== 'SCHEMA_MAP')){
+      const id = LABEL_TO_FIELD[l.text];
+      if(!id) continue;
+      (byField[id] ||= new Set()).add(l.text);
     }
-    const crossScreen = Object.entries(fieldScreens).filter(([, s]) => s.size > 1);
-    check('[rule 2] 複数画面に出る field が同一表記で照合できる', crossScreen.length > 0,
-      `${crossScreen.length} fields`);
+    const wobbling = Object.entries(byField).filter(([, s]) => s.size > 1);
+    check('[B] 同一fieldが画面ごとに別表記になっていない',
+      wobbling.length === 0, wobbling.map(([id, s]) => `${id}: ${[...s].join(' / ')}`).join(' | '));
+
+    const multi = Object.keys(byField).filter(id =>
+      A.filter(l => l.kind === 'field' && LABEL_TO_FIELD[l.text] === id).length > 1);
+    check('[E] 複数画面に出る field を照合できた', multi.length > 0, `${multi.length} fields`);
+
+    // ---- §5: 対応表で identifier を確認できる ----
+    const mapRows = A.filter(l => l.screen === 'SCHEMA_MAP');
+    check('[§5] display label ↔ identifier の対応表が開ける', mapRows.length > 0, `${mapRows.length} rows`);
+    check('[§5] 対応表は display label 側も登録済みである',
+      mapRows.every(l => !!LABEL_TO_FIELD[l.text]),
+      mapRows.filter(l => !LABEL_TO_FIELD[l.text]).map(l => l.text).join(','));
   }
   console.log('');
   console.log(`FAIL_COUNT: ${failCount}`);

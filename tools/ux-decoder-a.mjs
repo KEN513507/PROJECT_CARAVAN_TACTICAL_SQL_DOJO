@@ -14,6 +14,7 @@
 //   node tools/ux-decoder-a.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload } from './campaign-index.mjs';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -39,10 +40,15 @@ const WRONG = [...RIGHT.slice(0, -1), "'MISSING'"];
 async function newTestPage(browser, vp, jsErrors){
   const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
-  await page.addInitScript(({ silenceMs }) => {
+  await page.addInitScript(({ silenceMs, learning, progress }) => {
     window.__NEON_TEST_CONFIG__ = { enabled: true, evidenceSilenceMs: silenceMs };
-  }, { silenceMs: CONTRACTS.testSilenceMs });
-  page.on('dialog', d => d.dismiss());
+    // campaign は M01〜M12 + CHAPTER 1〜6。このDecoderの対象は本編CHAPTER 1。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(progress));
+  }, { silenceMs: CONTRACTS.testSilenceMs,
+       learning: learningCompletedPayload(), progress: campaignProgress({ story: 0 }) });
+  // 再開ダイアログを拒否すると campaign 先頭の M01 へ戻るため受諾する
+  page.on('dialog', d => d.accept());
   if(jsErrors) page.on('pageerror', e => jsErrors.push(e.message));
   return { ctx, page };
 }

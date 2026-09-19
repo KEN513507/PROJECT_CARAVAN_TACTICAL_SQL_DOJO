@@ -1,12 +1,24 @@
 // js/app.js
 import { SoundEngine } from './sound.js?v=20260915-sprint2';
 import { BgmEngine } from './bgm.js?v=20260915-sprint2';
-import { TABLES, STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260918-ch6-investigation';
+import { TABLES, STAGES as STORY_STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260918-ch6-investigation';
 import { judgeByResult } from './sql-engine.js?v=20260917-fe-rtp';
 import { getRelationTask, buildRelationTables, RelationTaskSession, RelationPhase, evaluateRelation,
   applyReconstructedFacts } from './relation-task.js?v=20260918-ch6-investigation';
-import { UIManager } from './ui.js?v=20260915-sprint2';
-import { ChapterSession, Phase } from './chapter-session.js?v=20260915-sprint2';
+import { UIManager } from './ui.js?v=20260919-onboarding';
+import { ChapterSession, Phase } from './chapter-session.js?v=20260919-onboarding';
+
+import { ONBOARDING_STAGES, ONBOARDING_TABLES } from './onboarding.js';
+import { learningActions } from './learning-actions.js';
+
+// ---- CANONICAL CAMPAIGN ----
+// M01〜M12（初心者導入）と CHAPTER 1〜6（NEON RELAY 本編）を一続きの1本として扱う。
+// 分岐は「章ごとの st.learning」で行い、campaign全体をどちらかのモードとは見なさない。
+const STAGES = [...ONBOARDING_STAGES, ...STORY_STAGES];
+const STORY_OFFSET = ONBOARDING_STAGES.length;   // 本編CHAPTER 1のindex
+const STORY_CH1 = STORY_OFFSET;
+const isLearningStage = i => !!STAGES[i] && !!STAGES[i].learning;
+const isStoryCh1 = i => i === STORY_CH1;
 
 // ---- Presentation側マッピング (Domainはworkspace名を知らない) ----
 const WORKSPACE_BY_PHASE = {
@@ -177,6 +189,9 @@ class App {
     // RECONSTRUCTED FACT。RAW FACT（TABLES）とは別に保持し、照会時にだけ重ねる。
     // 形式: { 'EVAC_RECEPTION.E442.resident_id': 'R005' }
     this.reconstructedFacts = {};
+    // 実行の同一性トークン。await を跨いだ結果を commit してよいかの判定に使う。
+    // load() でインクリメントされるため、章が変わった時点で進行中の実行は stale になる。
+    this.runToken = 0;
     this.timeLeft = 0;
     this.timerId = null;
     this.assistLevel = 0; // 0: 自力、1〜3: ヒント、4: 完成SQL
@@ -214,6 +229,8 @@ class App {
     this.clearTypes = new Array(STAGES.length).fill(null);
 
     this.ui = new UIManager({
+      onQueryToken: i => this.selectLearningToken(i),
+      onLearningUtil: a => this.learningUtil(a),
       onToken:  (t,k) => this.tapToken(t,k),
       onUtil:   a     => this.util(a),
       onRun:    ()    => this.run(),
@@ -243,7 +260,9 @@ class App {
     this.applyMuteState();
 
     this.resumeFromProgress();
-    this.showCivisBoot(() => this.boot());
+    if(isLearningStage(this.stage)) this.boot();
+    else this.showCivisBoot(() => this.boot());
+    window.addEventListener('pagehide', () => this.saveProgress());
 
     // ---- UX Decoder (A/B) 専用テストフック。本番では window.__NEON_TEST_CONFIG__ が
     // 存在しないため一切有効化されない。ChapterSessionには触れず、Appの外側からのみ操作する。
@@ -265,7 +284,8 @@ class App {
   // tapToken() を通すのは、実プレイと同じくカンマ自動挿入を経由させて正しいSQLを生成するため
   // (ChapterSession.addToken を直接叩くと自動カンマが入らず不正解判定になってしまう)。
   _jumpToEvidenceForTest(){
-    const st = STAGES[0];
+    // 対象は本編CHAPTER 1。campaign先頭(M01)ではない。
+    const st = STAGES[STORY_CH1];
     const order = ['SELECT', 'resident_id', 'display_name', 'FROM', 'RESIDENT_CACHE',
       'WHERE', 'status', '=', "'MISSING'", 'AND', 'last_sector', '=', "'S4'"];
     order.forEach(text => {
@@ -282,7 +302,7 @@ class App {
     session.on('PhaseChanged', ({ to }) => {
       // UX Decoder (tools/ux-decoder-*.mjs) 専用の観測値。CSSからは参照しないこと。
       document.body.dataset.phase = to;
-      if(this.stage === 0){
+      if(isStoryCh1(this.stage) || isLearningStage(this.stage)){
         document.body.dataset.workspace = WORKSPACE_BY_PHASE[to] || 'query';
       }
       // UX Decoder A (遷移監査) 専用の全遷移ログ。ChapterSession自体は公開しない。
@@ -318,11 +338,12 @@ class App {
 
   // ---- 起動フロー: 初回のみオープニングを挟む ----
   boot(){
-    let introSeen = false;
-    try { introSeen = localStorage.getItem(INTRO_KEY) === 'true'; } catch(e){}
-    const isFreshStart = this.stage === 0 && this.xp === 0 && this.cleared.every(c => !c);
-    if(!introSeen && isFreshStart) this.showOpening();
-    else this.load();
+    // OPENING の出し分けは load() が本編CHAPTER 1の入口で行う。
+    this.load();
+  }
+
+  introSeen(){
+    try { return localStorage.getItem(INTRO_KEY) === 'true'; } catch(e){ return false; }
   }
 
   showOpening(){
@@ -365,7 +386,7 @@ class App {
   playVictory(){
     this.setBgm('victory', false, 0.6);
     this.bgmResumeTimer = setTimeout(() => {
-      this.setBgm(CHAPTER_BGM[this.stage] || 'title');
+      this.setBgm(this.chapterBgm());
     }, 1500);
   }
 
@@ -409,10 +430,19 @@ class App {
   // ---- RECONSTRUCTED FACT ----
   // TABLES（RAW FACT）は書き換えない。照会のときだけ復元値を重ねた表を作る。
   // これにより「復元していない状態」と「復元済みの状態」が別物として残る（RTP / 裁定 §5 §10）。
-  queryTables(){ return applyReconstructedFacts(TABLES, this.reconstructedFacts); }
+  queryTables(){ return isLearningStage(this.stage) ? ONBOARDING_TABLES : applyReconstructedFacts(TABLES, this.reconstructedFacts); }
+
+  // 学習章は導入用の静かなトラック。本編は章ごとの既存割り当てを使う。
+  chapterBgm(){
+    if(isLearningStage(this.stage)) return 'airy';
+    return CHAPTER_BGM[this.stage - STORY_OFFSET] || 'title';
+  }
   hasFact(key){ return Object.prototype.hasOwnProperty.call(this.reconstructedFacts, key); }
 
   saveProgress(){
+    // 学習章の下書き・完了は専用ストレージが持つ。campaign全体の進捗はここが持つ。
+    // どちらか一方ではなく、両方を常に保存する（M12→CHAPTER 1 を跨いで継続するため）。
+    if(isLearningStage(this.stage)) this.saveLearning();
     try{
       localStorage.setItem(PROGRESS_KEY, JSON.stringify({
         xp: this.xp, stage: this.stage, cleared: this.cleared, clearTypes: this.clearTypes,
@@ -423,19 +453,29 @@ class App {
     }
   }
   resumeFromProgress(){
+    // まず学習章の完了状況を復元し（cleared[0..11] が埋まる）、
+    // そのうえで campaign 進捗が本編まで進んでいれば、そちらを採用する。
+    this.restoreLearning();
     const saved = this.loadProgressRaw();
     if(!saved) return;
+    if(saved.stage >= STORY_OFFSET) return this.resumeStoryProgress(saved);
+    return;
+  }
+
+  // 本編（CHAPTER 1〜6）まで到達済みの進捗を復元する。
+  resumeStoryProgress(saved){
     const hasProgress = saved.stage > 0 || saved.xp > 0 || saved.cleared.some(Boolean);
     const fullyCleared = saved.cleared.length === STAGES.length && saved.cleared.every(Boolean);
     if(!hasProgress || fullyCleared) return;
 
     let resume = false;
-    try{ resume = window.confirm(`前回の続き（CHAPTER ${saved.stage + 1}）から再開しますか？`); }catch(e){ resume = false; }
+    try{ resume = window.confirm(`前回の続き（CHAPTER ${saved.stage - STORY_OFFSET + 1}）から再開しますか？`); }catch(e){ resume = false; }
 
     if(resume){
       this.xp = saved.xp;
       this.stage = Math.min(saved.stage, STAGES.length - 1);
-      this.cleared = saved.cleared.length === STAGES.length ? saved.cleared : new Array(STAGES.length).fill(false);
+      // 学習章のclearedは restoreLearning() が埋めた値を保持し、長さ違いの古い保存では潰さない
+      if(saved.cleared.length === STAGES.length) this.cleared = saved.cleared;
       this.clearTypes = Array.isArray(saved.clearTypes) && saved.clearTypes.length === STAGES.length
         ? saved.clearTypes : new Array(STAGES.length).fill(null);
       this.reconstructedFacts = (saved.reconstructedFacts && typeof saved.reconstructedFacts === 'object')
@@ -548,6 +588,7 @@ class App {
   get built(){ return this.session.draft.tokens; }
 
   tapToken(t, k){
+    if(isLearningStage(this.stage)) return this.tapLearningToken(t, k);
     if(this.isRelationStage()) return;
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
@@ -575,6 +616,7 @@ class App {
   }
 
   util(a){
+    if(isLearningStage(this.stage)) return this.learningUtil(a === 'br' ? 'after' : a);
     if(this.isRelationStage()) return;
     if(this.solved || this.timedOut) return;
     sound.tap(); vibrate(8);
@@ -591,6 +633,7 @@ class App {
   }
 
   run(){
+    if(isLearningStage(this.stage)) return this.runLearning();
     if(this.timedOut) return;
     if(this.isRelationStage()){
       if(this.solved){ this.next(); return; }
@@ -599,11 +642,11 @@ class App {
     }
     if(this.solved){ this.next(); return; }
     // CH1: 不正解後にUndoだけで直した draft もそのまま再実行できるようにする
-    if(this.stage === 0 && this.session.phase === Phase.QUERY_REJECTED) this.session.resumeDrafting();
+    if(isStoryCh1(this.stage) && this.session.phase === Phase.QUERY_REJECTED) this.session.resumeDrafting();
     if(this.session.phase === Phase.QUERY_DRAFTING){
       sound.tap();
       this.session.submit();
-      const onCancel = this.stage === 0 ? () => this.session.cancelPrediction() : null;
+      const onCancel = isStoryCh1(this.stage) ? () => this.session.cancelPrediction() : null;
       this.ui.showPredictBar(STAGES[this.stage].rowChoices, choice => this.onPredicted(choice), onCancel);
       return;
     }
@@ -630,6 +673,15 @@ class App {
     if(this.solved || this.timedOut) return;
     this.ui.hidePredictBar();
     const st = STAGES[this.stage];
+    // ---- 実行開始時の同一性を固定する ----
+    // await を跨いでいる間に章が変わると、古い章の結果が新しい章へ commit されてしまう。
+    // commit 直前にこの3つが全て一致することを要求し、一致しなければ結果を捨てる。
+    const runToken = this.runToken;
+    const stageAtStart = this.stage;
+    const sessionAtStart = this.session;
+    const isSameRun = () => runToken === this.runToken
+      && stageAtStart === this.stage
+      && sessionAtStart === this.session;
     const built = this.session.draft.tokens.map(x => x.t === '\n' ? ' ' : x.t).join(' ');
     // 実SQL実行（READ-ONLY）: 文字列一致ではなく、実データへ適用した結果で判定する。
     // これにより想定外だが正しい別解も受理される (docs/NEON_RELAY_FE_RTP_IMPLEMENTATION_ALIGNMENT.md)。
@@ -662,7 +714,7 @@ class App {
       this.lastResult = computed;
       this.lastBuiltSql = built;
 
-      if(this.stage === 0){
+      if(isStoryCh1(this.stage)){
         // Effects (CH1限定の沈黙演出)。Domainはこの演出を知らない。
         this.ui.renderResultSet(computed);
         this.ui.setFeedback('', '');
@@ -673,6 +725,9 @@ class App {
           ? (window.__NEON_TEST_CONFIG__.evidenceSilenceMs ?? 800)
           : 800;
         await new Promise(r => setTimeout(r, silenceMs));
+        // 沈黙中に章が変わっていたら、この実行結果は破棄する。
+        // UI更新 / XP / cleared / success state / story progression のいずれも起こさない。
+        if(!isSameRun()) return;
         this.session.clear();
         this.finishCorrect(st);
       } else {
@@ -686,7 +741,7 @@ class App {
       if(errorType) this.errorTypes[errorType]++;
       this.session.reject(r.error ? 'sql_error' : 'sql_mismatch');
       this.lastSqlError = r.error || null;
-      if(this.stage === 0) this._handleReject();
+      if(isStoryCh1(this.stage)) this._handleReject();
       else {
         this.ui.setFeedback(r.error
           ? `❌ 実行できません… ${r.error}`
@@ -705,10 +760,10 @@ class App {
     // CH1: 支援状態のSource of TruthはChapterSession.assistanceLevel/clearType。
     // App.assistLevel (Hintボタンの表示用ミラー) は評価には使わない。
     // CH2以降: 既存どおり clearTypeForAssist(this.assistLevel) を使用(仕様は変更しない)。
-    const clearType = this.stage === 0
+    const clearType = isStoryCh1(this.stage)
       ? mapSessionClearType(this.session.clearType)
       : clearTypeForAssist(this.assistLevel);
-    const assistLevelForRecord = this.stage === 0 ? this.session.assistanceLevel : this.assistLevel;
+    const assistLevelForRecord = isStoryCh1(this.stage) ? this.session.assistanceLevel : this.assistLevel;
     const fullGain = 100 + bonus + (predictOk ? 30 : 0);
     const gain = clearType === 'MASTERED' ? fullGain :
       (clearType === 'ASSISTED' ? Math.round(fullGain / 2) : 0);
@@ -716,7 +771,7 @@ class App {
     this.cleared[this.stage] = true;
     this.recordMastery(clearType, assistLevelForRecord);
     this.saveProgress();
-    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.ui.setHud(this.stage, STAGES.length, this.xp, this.stage - STORY_OFFSET + 1, STORY_STAGES.length);
     const feedback = {
       MASTERED: `✅ MASTERED — 自力で完全正解。+${gain} XP`,
       ASSISTED: `✅ CLEAR — ヒント使用。+${gain} XP（MASTERED未達）`,
@@ -727,7 +782,7 @@ class App {
     this.ui.lockPad();
     this.ui.markSolved(this.stage === STAGES.length - 1);
     this.ui.setRunDisabled(false);
-    if(this.stage === 0){
+    if(isStoryCh1(this.stage)){
       this.ui.setProtagonist('idle');
       this.ui.setRunLabel('▶ 続ける');
     }
@@ -744,6 +799,7 @@ class App {
 
   // ---- 成功画面 ----
   successView(clearType, gain){
+    if(isLearningStage(this.stage)) return this.learningSuccessView();
     const st = STAGES[this.stage];
     const clearNote = {
       MASTERED: '自力で完全正解',
@@ -754,7 +810,17 @@ class App {
       missionTitle: st.level,
       problem: st.prompt,
       // 2表・3表問題でも全source tableをZONE 1へ収める
-      tables: (st.tables || []).map(name => Object.assign({ name }, this.queryTables()[name])),
+      // ZONE 1 は「結果がRaw Dataと整合するか」を検証する場所なので、
+      // Query画面と同じ表・同じ列の見え方を渡す（SQL WORKSPACE VISIBILITY CONTRACT §8）。
+      tables: (st.tables || []).map(spec => {
+        const name = typeof spec === 'string' ? spec : spec.name;
+        const tb = this.queryTables()[name];
+        if(!tb) return { name, cols: [], rows: [], keys: [] };
+        const pick = (typeof spec === 'object' && Array.isArray(spec.cols))
+          ? spec.cols.filter(c => tb.cols.indexOf(c) !== -1) : tb.cols;
+        const idx = pick.map(c => tb.cols.indexOf(c));
+        return { name, cols: pick, keys: tb.keys || [], rows: tb.rows.map(r => idx.map(i => r[i])) };
+      }),
       executedSql: this.lastBuiltSql || st.answers[0],
       result: this.lastResult || st.resultSet,
       alternatives: (st.answers || []).slice(1),
@@ -846,7 +912,7 @@ class App {
 
 「${task.evidence.nora}」`
         : task.storyContext;
-    } else if(this.stage === 0 && !this.cleared[0]){
+    } else if(isStoryCh1(this.stage) && !this.cleared[STORY_CH1]){
       text = `「${TUTORIAL.intro}」
 
 ${st.note || ''}`.trim();
@@ -864,6 +930,7 @@ ${st.note || ''}`.trim();
   }
 
   hint(){
+    if(isLearningStage(this.stage)) return this.learningHint();
     if(this.solved) return;
     if(this.isRelationStage()){ this.relationHint(); return; }
     bgm.duck(1500);
@@ -872,7 +939,7 @@ ${st.note || ''}`.trim();
     // CH1: 手動Hintも必ずDomain側(ChapterSession.assistanceLevel)を更新する。
     // App.assistLevel はUI表示(ボタン文言・ヒント内容の添字)用のミラーとしてのみ残し、
     // CH1の評価判定には使わない(Source of TruthはChapterSession側)。
-    if(this.stage === 0) this.session.requestHint();
+    if(isStoryCh1(this.stage)) this.session.requestHint();
     const st = STAGES[this.stage];
     const hints = [null, st.hint1, st.hint2, st.skeleton, st.answers[0]];
     const labels = ['', '概念ヒント', '構造ヒント', '穴あきSQL', '完成SQL'];
@@ -884,7 +951,7 @@ ${st.note || ''}`.trim();
         ? '💡 穴あきSQLを表示。次は完成SQL（PRACTICE・XP0）。'
         : `💡 ${labels[this.assistLevel]}を表示。正解時はASSISTED（XP半額）。`);
     this.ui.setFeedback(feedback, '');
-    if(this.stage === 0){
+    if(isStoryCh1(this.stage)){
       const level = this.assistLevel;
       const isSql = level >= 3;
       this.ui.openSheet({
@@ -906,6 +973,7 @@ ${st.note || ''}`.trim();
   }
 
   retryStage(){
+    if(isLearningStage(this.stage)){ this.ui.setFeedback('', ''); return this.refreshLearning(); }
     sound.tap(); vibrate(8);
     this.load();
     this.saveProgress();
@@ -917,6 +985,7 @@ ${st.note || ''}`.trim();
   }
 
   selectStage(i){
+    if(isLearningStage(this.stage)) this.saveLearning();
     sound.tap(); vibrate(8);
     this.ui.closeStageDrawer();
     this.stage = i;
@@ -936,21 +1005,22 @@ ${st.note || ''}`.trim();
   }
   stopTimer(){ if(this.timerId){ clearInterval(this.timerId); this.timerId = null; } }
   timeout(){
+    if(isLearningStage(this.stage)) return;
     if(this.isRelationStage()) return;
     this.setBgm('urgent');
     sound.error(); vibrate([25,60,25]);
     this.timedOut = true;
-    if(this.stage === 0) this.ui.setProtagonist('defeated');
+    if(isStoryCh1(this.stage)) this.ui.setProtagonist('defeated');
     if(this.tutorialActive){ this.tutorialActive = false; this.ui.hideTutorial(); this.ui.clearTokenHighlight(); }
     this.ui.disableForTimeout();
     this.ui.setFeedback('⏰ 時間切れ… 模範形を確認して再度挑戦。','ng');
     this.assistLevel = 4;
     this.ui.setAssistLevel(this.assistLevel);
     // CH1: 完成SQLを見せた瞬間にDomain側もPRACTICE相当へ確定させる(Retryしても戻らない)。
-    if(this.stage === 0) this.session.markFullAnswerShown();
+    if(isStoryCh1(this.stage)) this.session.markFullAnswerShown();
     this.ui.showHint(STAGES[this.stage].answers[0]);
     this.ui.showRetryButton();
-    if(this.stage === 0){
+    if(isStoryCh1(this.stage)){
       this.ui.openSheet({
         badge: '⏰ TIMEOUT',
         text: '時間切れ。模範形を確認して再度挑戦。（このクリアはPRACTICE扱い）',
@@ -1006,7 +1076,7 @@ ${st.note || ''}`.trim();
     this.ui.setMission(task.level, task.prompt);
     this.ui.renderSchema([]);
     this.ui.renderTokens([]);
-    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.ui.setHud(this.stage, STAGES.length, this.xp, this.stage - STORY_OFFSET + 1, STORY_STAGES.length);
     this.ui.setRunDisabled(false);
     this.ui.resetRunBtn();
     this.ui.setRunLabel('▶ 復元内容を検証');
@@ -1014,7 +1084,7 @@ ${st.note || ''}`.trim();
     this.ui.setFeedback('', '');
     this.relation.beginSolving();
     this.renderRelation();
-    this.setBgm(CHAPTER_BGM[this.stage] || 'title');
+    this.setBgm(this.chapterBgm());
   }
 
   relationView(){
@@ -1155,7 +1225,7 @@ ${st.note || ''}`.trim();
     this.recordReconstructedFacts();
     this.recordMastery(clearType, this.relation.assistanceLevel);
     this.saveProgress();
-    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.ui.setHud(this.stage, STAGES.length, this.xp, this.stage - STORY_OFFSET + 1, STORY_STAGES.length);
     this.relationActiveSlotId = null;
     this.ui.hideRetryButton();
     // Relation専用のEvidence表示（SQL monitor / token pad / utility は出さない）
@@ -1193,6 +1263,18 @@ ${st.note || ''}`.trim();
   }
 
   load(){
+    if(isLearningStage(this.stage)) return this.loadLearning();
+    // 本編の入口（CHAPTER 1）に初めて入るときだけ OPENING を出す。
+    // campaign先頭は M01 なので、OPENING は「学習を終えて本編へ入る瞬間」に対応する。
+    if(isStoryCh1(this.stage) && !this.cleared[STORY_CH1] && !this.introSeen()){
+      this.showOpening();
+      return;
+    }
+    // 学習章のPresentationを残したまま本編へ入らない
+    document.body.classList.remove('learning-ui');
+    delete document.body.dataset.mission;
+    // 進行中の実行を stale にする（await 明けの commit をここで無効化する）
+    this.runToken++;
     const st = STAGES[this.stage];
     if(st && st.interactionKind === 'RELATION_FILL'){
       this.loadRelationTask();
@@ -1220,18 +1302,21 @@ ${st.note || ''}`.trim();
     // CHAPTER_CLEARED から先(次の章へ進む/選び直す)は clearDraft() 自体がガードで false を返すため、
     // その時だけ新しい ChapterSession を作り直す。
     if(!this.session.clearDraft()){
-      this.session = new ChapterSession('CH' + (this.stage + 1));
+      this.session = new ChapterSession('CH' + (this.stage - STORY_OFFSET + 1));
       this._bindSession(this.session);
     }
+    // 章を切り替えた直後、観測値が前の章のphaseのまま残らないようにする
+    // （学習章 M12 の CHAPTER_CLEARED を本編CH1が引き継いでしまう経路があった）
+    document.body.dataset.phase = this.session.phase;
     this.assistLevel = 0;
     this.solved = false;
     this.predicted = null;
     this.timedOut = false;
     this.rowPredictionRecorded = false;
-    this.ui.setProtagonist(this.stage === 0 ? 'idle' : 'hidden');
+    this.ui.setProtagonist(isStoryCh1(this.stage) ? 'idle' : 'hidden');
     this.ui.closeSheet();
-    this.ui.setCh1Layout(this.stage === 0);
-    if(this.stage === 0){
+    this.ui.setCh1Layout(isStoryCh1(this.stage));
+    if(isStoryCh1(this.stage)){
       document.body.dataset.workspace = WORKSPACE_BY_PHASE[this.session.phase] || 'query';
       this.ui.setMissionBrief(st.brief);
     }
@@ -1248,15 +1333,15 @@ ${st.note || ''}`.trim();
     this.ui.setMission(st.level, st.prompt);
     this.ui.renderSchema(st.tables, this.queryTables());
     this.ui.renderTokens(st.tokens);
-    this.ui.setHud(this.stage, STAGES.length, this.xp);
+    this.ui.setHud(this.stage, STAGES.length, this.xp, this.stage - STORY_OFFSET + 1, STORY_STAGES.length);
     this.ui.setFeedback('', '');
     this.refreshMonitor();
     this.startTimer();
-    this.setBgm(CHAPTER_BGM[this.stage] || 'title');
+    this.setBgm(this.chapterBgm());
 
     let tutorialSeen = false;
     try { tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === 'true'; } catch(e){}
-    this.tutorialActive = this.stage === 0 && !this.cleared[0] && !tutorialSeen;
+    this.tutorialActive = isStoryCh1(this.stage) && !this.cleared[STORY_CH1] && !tutorialSeen;
     this.tutorialStep = -1;
     if(this.tutorialActive){
       // セリフは画面に常設しない。🗣ボタンから任意で読める（openNoraLog）。
@@ -1270,7 +1355,7 @@ ${st.note || ''}`.trim();
 
   next(){
     if(this.stage < STAGES.length - 1){
-      const wasCh1 = this.stage === 0;
+      const wasCh1 = isStoryCh1(this.stage);
       this.stage++;
       if(wasCh1) this.showAuditLog(() => this.load());
       else this.load();
@@ -1311,7 +1396,8 @@ ${st.note || ''}`.trim();
     const chapters = STAGES.map((st, i) => {
       const entry = this.mastery[chapterKey(i)];
       return {
-        id: chapterKey(i), title: st.chapterTitle, skill: SKILL_LABELS[i],
+        // 学習章は st.concept が習得概念。本編章は既存の SKILL_LABELS を使う。
+        id: chapterKey(i), title: st.chapterTitle, skill: st.concept || SKILL_LABELS[i - STORY_OFFSET],
         completed: !!this.cleared[i],
         clearType: entry ? entry.clearType : null,
         assistLevel: entry ? entry.assistLevel : null,
@@ -1377,4 +1463,5 @@ document.addEventListener('touchstart', function once(){
   document.removeEventListener('touchstart', once);
 }, { passive:true });
 
+Object.assign(App.prototype, learningActions);
 new App();

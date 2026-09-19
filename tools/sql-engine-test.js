@@ -16,6 +16,9 @@ function check(label, ok, detail){
 }
 
 function rs(cols, rows){ return { cols, rows }; }
+function eq(label, actual, expected){
+  check(label, actual === expected, `actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`);
+}
 
 (async () => {
   const eng = await import(pathToFileURL(path.resolve(__dirname, '../js/sql-engine.js')).href);
@@ -182,6 +185,46 @@ function rs(cols, rows){ return { cols, rows }; }
     try { run(sql); } catch(e){ msg = e.message; }
     check(`[ERROR_MSG] ${label}`, re.test(msg), msg || '(例外なし)');
   });
+
+  // ================= D: SELECT * でも ORDER BY が効くこと =================
+  // 以前は * の射影だけ早期 return しており、ORDER BY を迂回していた（再現済みの不具合）。
+  {
+    const T = { ORD: { cols: ['id', 'x', 'v'], keys: ['id'],
+      rows: [['A', '3', 'p'], ['B', '1', 'q'], ['C', '2', 'r']] } };
+    const q = sql => executeSelect(sql, T);
+    const colAsc = q('SELECT id, x FROM ORD ORDER BY x');
+    const starAsc = q('SELECT * FROM ORD ORDER BY x');
+    const starDesc = q('SELECT * FROM ORD ORDER BY x DESC');
+    const starPlain = q('SELECT * FROM ORD');
+    eq('[D] 列指定 + ORDER BY が昇順になる', colAsc.rows.map(r => r[0]).join(''), 'BCA');
+    eq('[D] SELECT * + ORDER BY が昇順になる', starAsc.rows.map(r => r[0]).join(''), 'BCA');
+    eq('[D] SELECT * + ORDER BY DESC が降順になる', starDesc.rows.map(r => r[0]).join(''), 'ACB');
+    eq('[D] SELECT * は全列を返す', starAsc.cols.join(','), 'id,x,v');
+    check('[D] SELECT * + ORDER BY で ordered フラグが立つ', starAsc.ordered === true, String(starAsc.ordered));
+    check('[D] ORDER BY 無しの SELECT * は ordered にならない', starPlain.ordered !== true, String(starPlain.ordered));
+    eq('[D] ORDER BY 無しは元の行順のまま', starPlain.rows.map(r => r[0]).join(''), 'ABC');
+  }
+
+  // ================= E: NULL / 空文字 / 0 の区別 =================
+  // 現在の Mission で使う範囲（空文字・0・通常値の区別）が壊れていないことを固定する。
+  // NULL の三値論理（NULL <> 'x' を除外する／COUNT が非NULLだけ数える）と IS NULL は
+  // 現行エンジン未対応。これは M16 の前提であって、現行 Mission の不具合ではない。
+  {
+    const T = { NV: { cols: ['id', 'val'], keys: ['id'],
+      rows: [['A', null], ['B', ''], ['C', '0'], ['D', 'x']] } };
+    const q = sql => executeSelect(sql, T);
+    eq('[E] 空文字は空文字として一致する', q("SELECT id FROM NV WHERE val = ''").rows.map(r => r[0]).join(''), 'B');
+    eq('[E] 0 は 0 として一致する', q("SELECT id FROM NV WHERE val = '0'").rows.map(r => r[0]).join(''), 'C');
+    eq('[E] 通常値は通常値として一致する', q("SELECT id FROM NV WHERE val = 'x'").rows.map(r => r[0]).join(''), 'D');
+    check('[E] 空文字と 0 が同一視されていない',
+      q("SELECT id FROM NV WHERE val = ''").rows.length === 1 && q("SELECT id FROM NV WHERE val = '0'").rows.length === 1);
+    eq('[E] COUNT(*) は NULL 行も数える', q('SELECT COUNT(*) AS c FROM NV').rows[0][0], '4');
+    // M16 BLOCKER: IS NULL は未対応。未対応であることを明示し、無言で誤判定しないこと。
+    let isNullMsg = '';
+    try { q('SELECT id FROM NV WHERE val IS NULL'); } catch(e){ isNullMsg = e.message; }
+    check('[E][M16 BLOCKER] IS NULL は未対応として明示的に失敗する（誤った結果を返さない）',
+      isNullMsg.length > 0, isNullMsg || '(例外なし = 誤って成功している)');
+  }
 
   console.log('');
   console.log(`FAIL_COUNT: ${failCount}`);

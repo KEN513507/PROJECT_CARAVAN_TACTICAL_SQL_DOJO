@@ -1,10 +1,22 @@
 // js/ui.js
 import { TABLES } from './data.js?v=20260918-ch6-investigation';
+import { fieldLabel, tableLabel } from './display-labels.js?v=20260919-onboarding';
 
 const $ = id => document.getElementById(id);
 
 function esc(s){
   return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]);
+}
+
+// Data UI の列見出し。DISPLAY TERMINOLOGY CONTRACT の canonical display label を使う。
+// SQL Editor / monitor / token pad は internal SQL identifier のままで、ここは通らない。
+function escCol(s){
+  return esc(fieldLabel(s));
+}
+// internal SQL identifier をそのまま見せる場所（対応表など）用。
+// <wbr> は要素なので textContent は "resident_id" のまま変わらない。
+function escIdent(s){
+  return esc(s).replace(/_/g, '_<wbr>');
 }
 
 export class UIManager {
@@ -249,20 +261,107 @@ export class UIManager {
     if(action && action.onClick) action.onClick();
   }
 
-  // tablesSrc: 復元事実を重ねた表（App.queryTables()）。省略時は RAW FACT の TABLES。
+  // SQL WORKSPACE VISIBILITY CONTRACT
+  //   tables: ['NAME'] または [{ name, cols }]（§5 Missionに必要な列だけを出してよい）
+  //   tablesSrc: 復元事実を重ねた表（App.queryTables()）。省略時は RAW FACT の TABLES。
+  // 各表は独立した Table Card（details/summary）として縦に積む。値は省略しない。
   renderSchema(tables, tablesSrc){
     const src = tablesSrc || TABLES;
     let html = '';
-    for(const name of tables){
+    for(const spec of tables){
+      const name = typeof spec === 'string' ? spec : spec.name;
       const tb = src[name];
       if(!tb) continue;
-      const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
-      const body = tb.rows.map(r => '<tr>' + r.map((v,i) =>
-        `<td class="${tb.keys.indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${v === null || v === undefined ? '—' : esc(v)}</td>`).join('') + '</tr>').join('');
-      html += `<div class="schema-card"><h4>${esc(name)}</h4>
-        <table class="mini"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+      // 表示列。指定が無ければ全列。実在しない列名は無視する。
+      const pick = (typeof spec === 'object' && Array.isArray(spec.cols))
+        ? spec.cols.filter(c => tb.cols.indexOf(c) !== -1)
+        : tb.cols;
+      const idx = pick.map(c => tb.cols.indexOf(c));
+      const head = pick.map(c => `<th>${escCol(c)}</th>`).join('');
+      const body = tb.rows.map(r => '<tr>' + idx.map(i =>
+        `<td class="${tb.keys.indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${r[i] === null || r[i] === undefined ? '—' : esc(r[i])}</td>`).join('') + '</tr>').join('');
+      // 一部の列だけ出しているときは、その事実を隠さず明示する（§5: Data隠蔽ではない）
+      const omitted = tb.cols.length - pick.length;
+      const note = omitted > 0
+        ? `<div class="schema-cols">この照会に必要な ${pick.length} 列を表示（全 ${tb.cols.length} 列）</div>` : '';
+      // DISPLAY TERMINOLOGY CONTRACT §5:
+      // 表示ラベルとSQL識別子の対応を確認できるようにする。ただし表見出しに毎回併記して
+      // 横幅を浪費しない。必要なときだけ開く対応表として置く。
+      const map = pick.map(c =>
+        `<div class="schema-map-row"><span class="schema-map-l">${escCol(c)}</span><span class="schema-map-i">${escIdent(c)}</span></div>`
+      ).join('');
+      const mapBlock = `<details class="schema-map"><summary>SQLでの列名を見る</summary><div class="schema-map-body">${map}</div></details>`;
+      // 1表なら開いたまま。2表以上は既定で畳み、すべての Source Table の見出しを
+      // 同時に見せる（§9「JOIN元の両表を確認できない」を防ぐ）。開閉状態は章内で保持される。
+      const openAttr = tables.length === 1 ? ' open' : '';
+      html += `<details class="schema-card"${openAttr}><summary><span class="schema-name">${esc(name)}</span><span class="schema-rows">${tb.rows.length}行 / ${pick.length}列</span></summary>
+        <div class="schema-body">${note}
+        <table class="mini"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${mapBlock}</div></details>`;
     }
     this.el.schemaPanel.innerHTML = html;
+  }
+
+  setLearningHud(stage, completed, total){
+    this.el.stageLabel.textContent = `NEON RELAY · M${String(stage + 1).padStart(2, '0')}`;
+    this.el.progressFill.style.width = `${completed / total * 100}%`;
+    this.el.progressFill.parentElement.setAttribute('aria-label', `${total}件中${completed}件完了`);
+    this.el.timer.hidden = true;
+    this.el.xp.hidden = true;
+    this.el.noraBtn.hidden = true;
+    this.el.orderBtn.hidden = true;
+    this.el.hintBtn.textContent = 'ヒント';
+    this.el.undoBtn.textContent = '↶ 戻す';
+    this.el.feedback.setAttribute('role', 'status');
+    this.el.feedback.setAttribute('aria-live', 'polite');
+    this.el.zoneResult.querySelector('.zone-title').textContent = '照会結果';
+    this.el.zoneComm.querySelector('.zone-title').textContent = '作業記録';
+    this.el.utilBar.innerHTML = [
+      ['after', '選択語の後に追加'], ['end', '末尾に追加'], ['remove', '選択語を削除'], ['clear', '全消去']
+    ].map(([action, label]) => `<button type="button" data-edit="${action}">${label}</button>`).join('');
+    this.el.utilBar.querySelectorAll('[data-edit]').forEach(b => {
+      b.onclick = () => this.h.onLearningUtil(b.dataset.edit);
+    });
+  }
+
+  renderLearningGuide(text){
+    let guide = document.getElementById('learningGuide');
+    if(!guide){ guide = document.createElement('div'); guide.id = 'learningGuide'; this.el.mission.appendChild(guide); }
+    guide.textContent = text;
+  }
+
+  renderLearningSource(name, table, note){
+    const header = table.cols.map((col, i) => `<th><button type="button" data-source-col="${i}">${escCol(col)}</button></th>`).join('');
+    const rows = table.rows.map((row, ri) => `<tr>${row.map((value, ci) =>
+      `<td><button type="button" data-source-row="${ri}" data-source-cell="${ci}">${esc(value)}</button></td>`).join('')}</tr>`).join('');
+    this.el.schemaPanel.innerHTML = `<div class="learning-source-title">${esc(tableLabel(name))}<span>列・値をタップで挿入</span></div>
+      <div class="learning-source-scroll"><table class="mini"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="learning-source-note">${esc(note)}</div>`;
+    this.el.schemaPanel.querySelectorAll('[data-source-col]').forEach(b => {
+      b.onclick = () => this.h.onToken(table.cols[Number(b.dataset.sourceCol)], 'col');
+    });
+    this.el.schemaPanel.querySelectorAll('[data-source-row]').forEach(b => {
+      b.onclick = () => {
+        const value = table.rows[Number(b.dataset.sourceRow)][Number(b.dataset.sourceCell)];
+        this.h.onToken(typeof value === 'number' ? String(value) : "'" + value.replace(/'/g, "''") + "'", 'lit');
+      };
+    });
+  }
+
+  renderEditableQuery(tokens, cursor, disabled){
+    const parts = tokens.map((token, i) => {
+      const marker = !cursor.replace && cursor.index === i ? '<span class="insert-cursor" aria-label="追加位置">▏</span>' : '';
+      return marker + `<button type="button" class="query-token tk-${esc(token.k)}${cursor.replace && cursor.index === i ? ' selected' : ''}"
+        data-query-index="${i}" aria-pressed="${cursor.replace && cursor.index === i}" ${disabled ? 'disabled' : ''}>${esc(token.t)}</button>`;
+    }).join(' ');
+    this.el.monitor.innerHTML = parts + (!cursor.replace && cursor.index >= tokens.length ? '<span class="insert-cursor" aria-label="追加位置">▏</span>' : '');
+    this.el.monitor.setAttribute('aria-label', 'SQL。語句を選択すると置き換えられます');
+    this.el.monitor.querySelectorAll('[data-query-index]').forEach(b => {
+      b.onclick = () => this.h.onQueryToken(Number(b.dataset.queryIndex));
+    });
+    this.el.utilBar.querySelector('[data-edit="after"]').disabled = disabled || !cursor.replace;
+    this.el.utilBar.querySelector('[data-edit="remove"]').disabled = disabled || !tokens.length;
+    this.el.utilBar.querySelector('[data-edit="end"]').disabled = disabled;
+    this.el.utilBar.querySelector('[data-edit="clear"]').disabled = disabled || !tokens.length;
   }
 
   renderTokens(tokens){
@@ -274,6 +373,9 @@ export class UIManager {
       col:    { label:'列名・値 (COLUMNS & LITERALS)', items:[] },
       lit:    { label:'列名・値 (COLUMNS & LITERALS)', items:[] }
     };
+    if(document.body.classList.contains('learning-ui')){
+      groups.clause.label = '構文'; groups.func.label = '演算・集計'; groups.table.label = '表'; groups.col.label = '列・値';
+    }
     const merge = { op:'func', lit:'col', and:'clause', as:'clause', alias:'col' };
     tokens.forEach(t => { const gk = merge[t.k] || t.k; if(groups[gk]) groups[gk].items.push(t); });
 
@@ -321,10 +423,14 @@ export class UIManager {
 
   setFeedback(text, cls){ this.el.feedback.textContent = text; this.el.feedback.className = cls || ''; }
   setMission(level, prompt){ this.el.missionLevel.textContent = level; this.el.missionText.textContent = prompt; }
-  setHud(stage, total, xp){
-    this.el.stageLabel.textContent = `CASE 53 ─ CH.${stage+1}/${total}`;
+  // chapterNo / chapterTotal は本編（CHAPTER 1〜6）内での番号。campaign全体のindexではない。
+  setHud(stage, total, xp, chapterNo = stage + 1, chapterTotal = total){
+    this.el.stageLabel.textContent = `CASE 53 ─ CH.${chapterNo}/${chapterTotal}`;
     this.el.progressFill.style.width = ((stage+1)/total*100) + '%';
     this.el.xp.textContent = 'XP ' + xp;
+    this.el.timer.hidden = false;
+    this.el.xp.hidden = false;
+    this.el.noraBtn.hidden = false;
   }
   // Relation Task等、制限時間を持たないステージ用
   setTimerIdle(){
@@ -421,11 +527,11 @@ export class UIManager {
       const isCleared = !!cleared[i];
       const isCurrent = i === currentStage;
       // DEBUG時は未クリアの章も選択できる。表示アイコンは実際の進行状態を保つ。
-      const selectable = unlockAll || isCleared || isCurrent;
-      const cls = isCurrent ? 'stage-item current' : (isCleared ? 'stage-item cleared' : (unlockAll ? 'stage-item' : 'stage-item locked'));
-      const icon = isCurrent ? '▶' : (isCleared ? '✅' : (unlockAll ? '·' : '🔒'));
+      const selectable = unlockAll || isCleared || isCurrent || (st.learning && i === cleared.indexOf(false));
+      const cls = isCurrent ? 'stage-item current' : (isCleared ? 'stage-item cleared' : (selectable ? 'stage-item' : 'stage-item locked'));
+      const icon = isCurrent ? '▶' : (isCleared ? '✅' : (selectable ? '·' : '🔒'));
       return `<button type="button" class="${cls}" data-stage="${i}"${selectable ? '' : ' disabled'}>
-        <span class="stage-icon">${icon}</span><span class="stage-name">CH.${i+1} : ${esc(st.chapterTitle || st.level)}</span>
+        <span class="stage-icon">${icon}</span><span class="stage-name">${st.learning ? st.id : 'CH.' + (i + 1 - stages.filter(x => x.learning).length)} : ${esc(st.chapterTitle || st.level)}</span>
       </button>`;
     }).join('');
     this.el.stageDrawerBody.querySelectorAll('.stage-item:not(:disabled)').forEach(b => {
@@ -552,11 +658,11 @@ export class UIManager {
         // 復元確定値(MATCH成立後)のみセルへ入れる。MISMATCH中は「欠損」を維持する。
         const done = view.reconstructedValue;
         return `<div class="rq-field">
-          <span class="rq-k">${esc(f.col)}</span>
+          <span class="rq-k">${escCol(f.col)}</span>
           <button type="button" class="rq-missing relation-missing${done ? ' filled' : ''}" data-slot="${esc(f.slotId)}">${done ? esc(done) : '欠損'}</button>
         </div>`;
       }
-      return `<div class="rq-field"><span class="rq-k">${esc(f.col)}</span><span class="rq-v">${esc(f.value)}</span></div>`;
+      return `<div class="rq-field"><span class="rq-k">${escCol(f.col)}</span><span class="rq-v">${esc(f.value)}</span></div>`;
     }).join('');
     return `<div class="rq-card${primary ? ' rq-active' : ' rq-summary'}">
       <div class="rq-card-title"><span class="rq-card-name">${esc(view.targetTable)}</span> / ${esc(view.targetRowKey)}</div>
@@ -567,13 +673,13 @@ export class UIManager {
   // 照合キーは技術的な列対応を常時本文に書かず、値だけを大きく見せる
   relationKeyStrip(view){
     const keys = view.keyStrip.map(k =>
-      `<div class="rq-key"><span class="rq-key-v">${esc(k.value)}</span><span class="rq-key-l">${esc(k.label)}</span></div>`).join('');
+      `<div class="rq-key"><span class="rq-key-v">${esc(k.value)}</span><span class="rq-key-l">${escCol(k.label)}</span></div>`).join('');
     return `<div class="rq-keys"><div class="rq-keys-title">照合キー</div><div class="rq-keys-row">${keys}</div></div>`;
   }
 
   relationSourceCard(view, primary){
     const tb = view.sourceTable;
-    const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const head = tb.cols.map(c => `<th>${escCol(c)}</th>`).join('');
     const body = tb.rows.map(r => {
       const key = r[0];
       const chosen = view.selectedSource === key;
@@ -593,7 +699,7 @@ export class UIManager {
     const rows = m.keys.map((k, i) => {
       const label = view.keyStrip[i] ? view.keyStrip[i].label : k.targetCol;
       return `<div class="rq-cmp ${k.match ? 'ok' : 'ng'}">
-        <span class="rq-cmp-l">${esc(label)}</span>
+        <span class="rq-cmp-l">${escCol(label)}</span>
         <span class="rq-cmp-v">${esc(k.targetValue)}</span>
         <span class="rq-cmp-op">${k.match ? '=' : '≠'}</span>
         <span class="rq-cmp-v">${esc(k.sourceValue)}</span>
@@ -627,7 +733,7 @@ export class UIManager {
     const fields = view.targetFields.map(f => {
       const val = f.isSlot ? view.reconstructedValue : f.value;
       return `<div class="rq-field">
-        <span class="rq-k">${esc(f.col)}</span>
+        <span class="rq-k">${escCol(f.col)}</span>
         <span class="rq-v${f.isSlot ? ' rq-restored' : ''}">${esc(val)}</span>
       </div>`;
     }).join('');
@@ -641,7 +747,7 @@ export class UIManager {
   relationSourceRecordCard(view){
     if(!view.sourceRow) return '';
     const cells = view.sourceCols.map((c, i) =>
-      `<div class="rq-field"><span class="rq-k">${esc(c)}</span><span class="rq-v">${esc(view.sourceRow[i])}</span></div>`).join('');
+      `<div class="rq-field"><span class="rq-k">${escCol(c)}</span><span class="rq-v">${esc(view.sourceRow[i])}</span></div>`).join('');
     return `<div class="rq-card rq-summary">
       <div class="rq-card-title"><span class="rq-card-name">SOURCE RECORD</span></div>
       <div class="rq-done-sub">${esc(view.sourceTable.name)}</div>
@@ -654,7 +760,7 @@ export class UIManager {
     const canon = view.canonTable;
     const canonRows = canon ? canon.rows.map(r =>
       `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('') : '';
-    const canonHead = canon ? canon.cols.map(c => `<th>${esc(c)}</th>`).join('') : '';
+    const canonHead = canon ? canon.cols.map(c => `<th>${escCol(c)}</th>`).join('') : '';
     const rules = view.relationRules.map(r =>
       `<div class="rq-rule">${esc(r)}</div>`).join('');
     return `<div class="rq-aside">
@@ -688,10 +794,10 @@ export class UIManager {
 
     // ---- ZONE 1 ----
     const tables = view.tables.map(tb => {
-      const head = tb.cols.map(c => `<th>${esc(c)}</th>`).join('');
+      const head = tb.cols.map(c => `<th>${escCol(c)}</th>`).join('');
       const body = tb.rows.map(r => '<tr>' + r.map((v, i) =>
         `<td class="${(tb.keys || []).indexOf(tb.cols[i]) !== -1 ? 'pk' : ''}">${esc(v)}</td>`).join('') + '</tr>').join('');
-      return `<div class="zone-table"><h5>${esc(tb.name)}</h5>
+      return `<div class="zone-table"><h5>${esc(tableLabel(tb.name))}</h5>
         <table class="zone-grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }).join('');
     this.el.zoneProblemBody.innerHTML =
@@ -700,18 +806,18 @@ export class UIManager {
 
     // ---- ZONE 2 ----
     const rs = view.result;
-    const rHead = rs.cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const rHead = rs.cols.map(c => `<th>${escCol(c)}</th>`).join('');
     const rBody = rs.rows.map(r => '<tr>' + r.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('');
     const alts = view.alternatives.length
       ? `<div class="zone-label">別解</div>` + view.alternatives.map(a => `<div class="zone-sql alt">${esc(a)}</div>`).join('')
-      : `<div class="alt-none">この形が唯一の正解。</div>`;
+      : `<div class="alt-none">同じ結果になる書き方なら、この形でなくても正解。</div>`;
     this.el.zoneResultBody.innerHTML =
       `<div class="zone-label">EXECUTED SQL</div><div class="zone-sql">${esc(view.executedSql)}</div>` +
       `<div class="zone-label">RESULT</div>` +
       `<table class="zone-grid result"><thead><tr>${rHead}</tr></thead><tbody>${rBody}</tbody></table>` +
       alts +
       `<div class="zone-clear ${esc(view.clearType.toLowerCase())}">` +
-        `<span class="zone-clear-type">${esc(view.clearType)}</span>` +
+        `<span class="zone-clear-type">${esc(view.clearLabel || view.clearType)}</span>` +
         `<span class="zone-clear-note">${esc(view.clearNote)}</span></div>`;
 
     // ---- ZONE 3 ----
@@ -748,7 +854,7 @@ export class UIManager {
 
   // ---- 実行結果セット表示 ----
   renderResultSet(resultSet){
-    const head = resultSet.cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const head = resultSet.cols.map(c => `<th>${escCol(c)}</th>`).join('');
     const body = resultSet.rows.map(r => '<tr>' + r.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('');
     this.el.resultPanel.innerHTML = `<div class="panel-title">📊 実行結果</div>
       <table class="resultset"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
@@ -766,7 +872,7 @@ export class UIManager {
     if(alts.length){
       html += alts.map(a => `<div class="alt-sql">${esc(a)}</div>`).join('');
     } else {
-      html = '<div class="panel-title">🔁 別解</div><div class="alt-none">この形が唯一の正解。</div>';
+      html = '<div class="panel-title">🔁 別解</div><div class="alt-none">同じ結果になる書き方なら、この形でなくても正解。</div>';
     }
     this.el.altPanel.innerHTML = html;
     this.el.altPanel.classList.add('show');

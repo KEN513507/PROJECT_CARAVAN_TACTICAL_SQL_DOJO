@@ -1,10 +1,10 @@
 {
   "decoder": "A",
-  "generatedAt": "2026-09-18T11:19:17.505Z",
+  "generatedAt": "2026-09-19T04:41:21.500Z",
   "baseUrl": "http://127.0.0.1:8000/",
   "viewports": {
     "iphone-se": {
-      "elapsedMs": 16282,
+      "elapsedMs": 15632,
       "summary": {
         "total": 38,
         "pass": 38,
@@ -13,7 +13,7 @@
       }
     },
     "iphone-16e": {
-      "elapsedMs": 15826,
+      "elapsedMs": 15865,
       "summary": {
         "total": 38,
         "pass": 38,
@@ -243,7 +243,7 @@
     {
       "viewport": "iphone-se",
       "state": "TRANSITION",
-      "check": "happy:silence:testMode(~5000ms, observed=5048ms)",
+      "check": "happy:silence:testMode(~5000ms, observed=5047ms)",
       "pass": true,
       "message": ""
     },
@@ -509,7 +509,7 @@
     {
       "viewport": "iphone-16e",
       "state": "TRANSITION",
-      "check": "happy:silence:testMode(~5000ms, observed=5044ms)",
+      "check": "happy:silence:testMode(~5000ms, observed=5045ms)",
       "pass": true,
       "message": ""
     },

@@ -363,20 +363,22 @@ export function executeSelect(sql, tables){
   if(ast.having) groups = groups.filter(g => evalCondition(ast.having, g.key, g.rows));
 
   // SELECT 射影
-  let cols;
+  // 射影は * かどうかで列の決め方が変わるだけで、この後の ORDER BY は共通に通す。
+  // (以前は * のときだけ早期 return しており、ORDER BY が無視されていた)
+  let cols, outRows;
   if(ast.columns.length === 1 && ast.columns[0].kind === 'star'){
     cols = (rows[0] ? rows[0].cols.map(c => c.col) : []);
-    const outRows = groups.map(g => cols.map(c => g.key.values[c]));
-    return { cols, rows: outRows };
+    outRows = groups.map(g => cols.map(c => g.key.values[c]));
+  } else {
+    cols = ast.columns.map(c => {
+      if(c.alias) return c.alias;
+      if(c.expr.kind === 'col') return c.expr.name.includes('.') ? c.expr.name.split('.').pop() : c.expr.name;
+      if(c.expr.kind === 'agg') return c.expr.text;
+      return String(c.expr.value);
+    });
+    outRows = groups.map(g => ast.columns.map(c =>
+      String(evalOperand(c.expr, g.key, g.rows))));
   }
-  cols = ast.columns.map(c => {
-    if(c.alias) return c.alias;
-    if(c.expr.kind === 'col') return c.expr.name.includes('.') ? c.expr.name.split('.').pop() : c.expr.name;
-    if(c.expr.kind === 'agg') return c.expr.text;
-    return String(c.expr.value);
-  });
-  let outRows = groups.map(g => ast.columns.map(c =>
-    String(evalOperand(c.expr, g.key, g.rows))));
 
   // ORDER BY
   if(ast.orderBy){
@@ -413,7 +415,7 @@ export function resultsMatch(actual, expected, opts){
   const aligned = norm(actual.rows);
   const target = expected.rows.map(r => r.map(normValue));
 
-  const ordered = (opts && opts.ordered) || actual.ordered;
+  const ordered = opts?.ordered ?? actual.ordered;
   if(ordered){
     return aligned.every((r, i) => r.join('') === target[i].join(''));
   }
@@ -436,7 +438,7 @@ function normValue(v){
 // ---- 正誤判定（結果ベース） ----
 // 文字列一致ではなく、実データへ適用した結果が期待結果と一致するかで判定する。
 // これにより、想定外だが正しい別解も受理される。
-export function judgeByResult(sql, expectedResultSet, tables){
+export function judgeByResult(sql, expectedResultSet, tables, options){
   const text = String(sql || '').trim();
   if(!text.replace(/\s/g, '').length) return { ok: false, empty: true, result: null, error: null };
   let result;
@@ -445,5 +447,5 @@ export function judgeByResult(sql, expectedResultSet, tables){
   } catch(err){
     return { ok: false, empty: false, result: null, error: err instanceof SqlError ? err.message : String(err && err.message || err) };
   }
-  return { ok: resultsMatch(result, expectedResultSet), empty: false, result, error: null };
+  return { ok: (!options?.ordered || result.ordered) && resultsMatch(result, expectedResultSet, options), empty: false, result, error: null };
 }

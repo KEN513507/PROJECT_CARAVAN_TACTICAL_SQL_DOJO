@@ -11,6 +11,7 @@
 //   node tools/success-zone-check.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload, storyStage, CAMPAIGN_LENGTH } from './campaign-index.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -124,16 +125,15 @@ async function openStage(browser, vp, stageIndex){
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
   page.on('dialog', d => d.accept());
-  await page.addInitScript(idx => {
+  await page.addInitScript(seed => {
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-    if(idx > 0){
-      const cleared = [false, false, false, false, false].map((_, i) => i < idx);
-      localStorage.setItem('caravan_progress', JSON.stringify({
-        stage: idx, xp: 0, cleared, clearTypes: [null, null, null, null, null]
-      }));
-    }
-  }, stageIndex);
+    // campaign は M01〜M12 + CHAPTER 1〜6。学習章を完了済みにしてから本編の該当章へ入る。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(),
+       progress: campaignProgress({ story: stageIndex,
+         storyCleared: [0, 1, 2, 3, 4, 5].map(i => i < stageIndex) }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
   return { ctx, page, jsErrors };

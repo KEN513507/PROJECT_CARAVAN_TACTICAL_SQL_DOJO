@@ -7,6 +7,7 @@
 //   node tools/visual-scene-ui-check.mjs
 
 import { chromium } from 'playwright';
+import { campaignProgress, learningCompletedPayload } from './campaign-index.mjs';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -32,11 +33,14 @@ async function openApp(browser, vp){
   const page = await ctx.newPage();
   const jsErrors = [];
   page.on('pageerror', e => jsErrors.push(e.message));
-  page.on('dialog', d => d.dismiss());
-  await page.addInitScript(() => {
+  page.on('dialog', d => d.accept());
+  await page.addInitScript(seed => {
     localStorage.setItem('caravan_intro_seen', 'true');
     localStorage.setItem('caravan_tutorial_seen', 'true');
-  });
+    // campaign は M01〜M12 + CHAPTER 1〜6。既存Query UIの非退行は本編CHAPTER 1で見る。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, { learning: learningCompletedPayload(), progress: campaignProgress({ story: 0 }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
   return { ctx, page, jsErrors };

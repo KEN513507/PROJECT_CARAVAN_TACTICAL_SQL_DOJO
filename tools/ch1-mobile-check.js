@@ -91,11 +91,17 @@ async function runViewport(browser, vp){
   const missing = [];
   page.on('response', r => { if(r.status() === 404) missing.push(r.url()); });
   page.on('pageerror', e => check(`${tag} JS error なし`, false, e.message));
-  page.on('dialog', d => d.dismiss());
+  page.on('dialog', d => d.accept());
+
+  // campaign は M01〜M12 + CHAPTER 1〜6。学習章を終えた直後＝本編の入口から検証する。
+  await page.addInitScript(seed => {
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, CAMPAIGN_SEED);
 
   await page.goto(URL, { waitUntil: 'networkidle' });
 
-  // 初回起動: CIVIS boot → Opening Story → 調査画面（セリフは自動表示しない）
+  // 本編入口: CIVIS boot → Opening Story → 調査画面（セリフは自動表示しない）
   await page.waitForSelector('#storyOverlay.show', { timeout: 10000 });
   await page.click('#storyContinueBtn');
   await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
@@ -222,8 +228,13 @@ async function runAssistPaths(browser, vp){
   async function fresh(){
     const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
-    await page.addInitScript(() => { localStorage.setItem('caravan_intro_seen', 'true'); localStorage.setItem('caravan_tutorial_seen', 'true'); });
-    page.on('dialog', d => d.dismiss());
+    await page.addInitScript(seed => {
+    localStorage.setItem('caravan_intro_seen', 'true'); localStorage.setItem('caravan_tutorial_seen', 'true');
+    // campaign は M01〜M12 + CHAPTER 1〜6。本編CHAPTER 1から検証する。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, CAMPAIGN_SEED);
+    page.on('dialog', d => d.accept());
     await page.goto(URL, { waitUntil: 'networkidle' });
     await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
     return { ctx, page };
@@ -262,7 +273,12 @@ async function runTimeout(browser, vp){
   const tag = `[${vp.name} TIMEOUT]`;
   const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { localStorage.setItem('caravan_intro_seen', 'true'); localStorage.setItem('caravan_tutorial_seen', 'true'); });
+  await page.addInitScript(seed => {
+    localStorage.setItem('caravan_intro_seen', 'true'); localStorage.setItem('caravan_tutorial_seen', 'true');
+    // campaign は M01〜M12 + CHAPTER 1〜6。本編CHAPTER 1から検証する。
+    localStorage.setItem('neon_relay_campaign_v2', JSON.stringify(seed.learning));
+    localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
+  }, CAMPAIGN_SEED);
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
   await page.click('.tok[data-token="SELECT"]');
@@ -281,7 +297,14 @@ async function runTimeout(browser, vp){
   await ctx.close();
 }
 
+const CI = require('url').pathToFileURL(require('path').resolve(__dirname,'campaign-index.mjs')).href;
+let CAMPAIGN_SEED = null;
+
 (async () => {
+  {
+    const m = await import(CI);
+    CAMPAIGN_SEED = { learning: m.learningCompletedPayload(), progress: m.campaignProgress({ story: 0 }) };
+  }
   const browser = await chromium.launch();
   try {
     for(const vp of VIEWPORTS) await runViewport(browser, vp);

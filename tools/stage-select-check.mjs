@@ -28,7 +28,11 @@ async function openSelector(page){
   await page.waitForSelector('#stageDrawer.show', { timeout: 5000 });
 }
 
-const STAGE_COUNT = 6;
+import { STORY_OFFSET, CAMPAIGN_LENGTH, storyStage } from './campaign-index.mjs';
+
+// campaign は M01〜M12 + CHAPTER 1〜6 の一続き。本編の章はオフセット後にある。
+const STAGE_COUNT = CAMPAIGN_LENGTH;
+const STORY_TOTAL = CAMPAIGN_LENGTH - STORY_OFFSET;
 
 (async () => {
   const browser = await chromium.launch();
@@ -55,21 +59,22 @@ const STAGE_COUNT = 6;
     const title = await page.textContent('#stageDrawerTitle');
     check('DEBUGであることがタイトルに出る', /DEBUG/.test(title), title.trim());
     check('全章がセレクタに並ぶ', items.length === STAGE_COUNT, `count=${items.length}`);
+    check('M01〜M12が先に並ぶ', items.slice(0, STORY_OFFSET).every(i => i.name.includes('M0') || i.name.includes('M1')), items[0].name);
     check('未クリア章も disabled でない', items.every(i => !i.disabled), JSON.stringify(items.map(i => i.disabled)));
     check('未クリア章に locked クラスが付かない', items.every(i => !i.locked), JSON.stringify(items.map(i => i.locked)));
-    check('CH5(Relation Task)も選べる', /CH\.5/.test(items[4].name), items[4].name);
-    check('CH6(SQL Investigation)も選べる', /CH\.6/.test(items[5].name), items[5].name);
+    check('CH5(Relation Task)も選べる', /CH.5/.test(items[STORY_OFFSET + 4].name), items[STORY_OFFSET + 4].name);
+    check('CH6(SQL Investigation)も選べる', /CH.6/.test(items[STORY_OFFSET + 5].name), items[STORY_OFFSET + 5].name);
 
     // ---- 各章へ跳んで画面の整合を確認 ----
     // 期待: CH1=ch1-ui + Query / CH2〜4=通常Query / CH5=Relation
     const expected = [
-      { idx: 0, kind: 'query',    ch1ui: true },
-      { idx: 1, kind: 'query',    ch1ui: false },
-      { idx: 2, kind: 'query',    ch1ui: false },
-      { idx: 3, kind: 'query',    ch1ui: false },
-      { idx: 4, kind: 'relation', ch1ui: false },
+      { idx: storyStage(0), kind: 'query',    ch1ui: true },
+      { idx: storyStage(1), kind: 'query',    ch1ui: false },
+      { idx: storyStage(2), kind: 'query',    ch1ui: false },
+      { idx: storyStage(3), kind: 'query',    ch1ui: false },
+      { idx: storyStage(4), kind: 'relation', ch1ui: false },
       // CH6 は復元事実を前提にするため、未復元でCH5へ戻されるのが正しい挙動。
-      { idx: 5, kind: 'relation', ch1ui: false, redirectsTo: 4 }
+      { idx: storyStage(5), kind: 'relation', ch1ui: false, redirectsTo: storyStage(4) }
     ];
     for(const exp of expected){
       if(!(await page.isVisible('#stageDrawer.show'))) await openSelector(page);
@@ -98,28 +103,28 @@ const STAGE_COUNT = 6;
         };
       });
 
-      const shownCh = exp.redirectsTo !== undefined ? exp.redirectsTo + 1 : exp.idx + 1;
-      check(`CH${exp.idx + 1}: HUDが該当章を示す`, st.label.includes(`CH.${shownCh}/${STAGE_COUNT}`), st.label);
-      check(`CH${exp.idx + 1}: ch1-uiが期待どおり`, st.ch1ui === exp.ch1ui, `ch1ui=${st.ch1ui}`);
+      const shownCh = (exp.redirectsTo !== undefined ? exp.redirectsTo : exp.idx) - STORY_OFFSET + 1;
+      check(`CH${exp.idx - STORY_OFFSET + 1}: HUDが該当章を示す`, st.label.includes(`CH.${shownCh}/${STORY_TOTAL}`), st.label);
+      check(`CH${exp.idx - STORY_OFFSET + 1}: ch1-uiが期待どおり`, st.ch1ui === exp.ch1ui, `ch1ui=${st.ch1ui}`);
 
       if(exp.kind === 'relation'){
-        check(`CH${exp.idx + 1}: Relation画面が出る`, st.relationShown && st.workspace === 'relation', JSON.stringify(st));
-        check(`CH${exp.idx + 1}: Query専用UIが残っていない`,
+        check(`CH${exp.idx - STORY_OFFSET + 1}: Relation画面が出る`, st.relationShown && st.workspace === 'relation', JSON.stringify(st));
+        check(`CH${exp.idx - STORY_OFFSET + 1}: Query専用UIが残っていない`,
           !st.tokenPadShown && !st.monitorShown && !st.schemaShown, JSON.stringify(st));
-        check(`CH${exp.idx + 1}: タイマーが停止表示`, st.timer === '⏱ —', st.timer);
-        check(`CH${exp.idx + 1}: 検証ボタン`, /復元内容を検証/.test(st.runLabel), st.runLabel);
+        check(`CH${exp.idx - STORY_OFFSET + 1}: タイマーが停止表示`, st.timer === '⏱ —', st.timer);
+        check(`CH${exp.idx - STORY_OFFSET + 1}: 検証ボタン`, /復元内容を検証/.test(st.runLabel), st.runLabel);
       } else {
-        check(`CH${exp.idx + 1}: Query画面が出る`, st.tokenPadShown && st.monitorShown && st.tokens > 0, JSON.stringify(st));
-        check(`CH${exp.idx + 1}: Relation画面が残っていない`, !st.relationShown, `relationShown=${st.relationShown}`);
-        check(`CH${exp.idx + 1}: タイマーが動作`, /^⏱ \d+s$/.test(st.timer), st.timer);
-        check(`CH${exp.idx + 1}: 実行ボタン`, /実行/.test(st.runLabel), st.runLabel);
+        check(`CH${exp.idx - STORY_OFFSET + 1}: Query画面が出る`, st.tokenPadShown && st.monitorShown && st.tokens > 0, JSON.stringify(st));
+        check(`CH${exp.idx - STORY_OFFSET + 1}: Relation画面が残っていない`, !st.relationShown, `relationShown=${st.relationShown}`);
+        check(`CH${exp.idx - STORY_OFFSET + 1}: タイマーが動作`, /^⏱ \d+s$/.test(st.timer), st.timer);
+        check(`CH${exp.idx - STORY_OFFSET + 1}: 実行ボタン`, /実行/.test(st.runLabel), st.runLabel);
       }
-      check(`CH${exp.idx + 1}: page scroll なし`, await noPageScroll(page));
+      check(`CH${exp.idx - STORY_OFFSET + 1}: page scroll なし`, await noPageScroll(page));
     }
 
     // ---- Relation章 → Query章へ戻っても壊れない（workspace属性の残留チェック） ----
     await openSelector(page);
-    await page.click('#stageDrawerBody .stage-item[data-stage="1"]');
+    await page.click(`#stageDrawerBody .stage-item[data-stage="${storyStage(1)}"]`);
     await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
     const back = await page.evaluate(() => ({
       workspace: document.body.dataset.workspace || null,
