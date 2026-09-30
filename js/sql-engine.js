@@ -11,7 +11,9 @@
 export class SqlError extends Error {}
 
 const KEYWORDS = new Set(['SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'HAVING', 'ORDER',
-  'INNER', 'JOIN', 'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'ASC', 'DESC']);
+  'INNER', 'JOIN', 'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'ASC', 'DESC',
+  // FE出題範囲: 重複排除 / あいまい検索 / 範囲 / 外部結合 / NULL判定 / 副問合せ
+  'DISTINCT', 'LIKE', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'IS', 'NULL']);
 const AGGREGATES = new Set(['COUNT', 'SUM', 'AVG', 'MAX', 'MIN']);
 const WRITE_STATEMENTS = ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TRUNCATE', 'MERGE', 'REPLACE'];
 
@@ -63,14 +65,20 @@ class Parser {
     return this.next();
   }
 
-  parseSelect(){
+  parseSelect(nested){
     this.expectKw('SELECT');
+    let distinct = false;
+    if(this.atKw('DISTINCT')){ this.next(); distinct = true; }
     const columns = this.parseSelectList();
     this.expectKw('FROM');
     const from = this.parseTableRef();
     const joins = [];
-    while(this.atKw('INNER') || this.atKw('JOIN')){
-      if(this.atKw('INNER')) this.next();
+    while(this.atKw('INNER') || this.atKw('JOIN') || this.atKw('LEFT') || this.atKw('RIGHT')){
+      let joinType = 'INNER';
+      if(this.atKw('LEFT')){ this.next(); joinType = 'LEFT'; }
+      else if(this.atKw('RIGHT')){ this.next(); joinType = 'RIGHT'; }
+      else if(this.atKw('INNER')) this.next();
+      if(this.atKw('OUTER')) this.next();
       this.expectKw('JOIN');
       const table = this.parseTableRef();
       this.expectKw('ON');
@@ -79,7 +87,7 @@ class Parser {
       if(!opTok || opTok.type !== 'op') throw new SqlError('ON には比較条件が必要です');
       this.next();
       const right = this.parseOperand();
-      joins.push({ table, on: { kind: 'cmp', left, op: opTok.value, right } });
+      joins.push({ table, type: joinType, on: { kind: 'cmp', left, op: opTok.value, right } });
     }
     let where = null, groupBy = null, having = null, orderBy = null;
     if(this.atKw('WHERE')){ this.next(); where = this.parseOr(); }
@@ -100,8 +108,8 @@ class Parser {
         orderBy.push({ expr, dir });
       } while(this.atPunct(',') && (this.next(), true));
     }
-    if(this.i < this.t.length) throw new SqlError('文の後ろに余分な記述があります');
-    return { columns, from, joins, where, groupBy, having, orderBy };
+    if(!nested && this.i < this.t.length) throw new SqlError('文の後ろに余分な記述があります');
+    return { columns, distinct, from, joins, where, groupBy, having, orderBy };
   }
 
   parseSelectList(){
@@ -136,11 +144,14 @@ class Parser {
       // 集約関数か列参照か
       if(AGGREGATES.has(x.upper) && this.t[this.i + 1] && this.t[this.i + 1].type === 'punct' && this.t[this.i + 1].value === '('){
         this.next(); this.next();
+        let aggDistinct = false;
+        if(this.atKw('DISTINCT')){ this.next(); aggDistinct = true; }
         let arg;
         if(this.atPunct('*')){ this.next(); arg = { kind: 'star' }; }
         else arg = this.parseOperand();
         this.expectPunct(')');
-        return { kind: 'agg', fn: x.upper, arg, text: `${x.upper}(${arg.kind === 'star' ? '*' : arg.name})` };
+        const argText = (aggDistinct ? 'DISTINCT ' : '') + (arg.kind === 'star' ? '*' : arg.name);
+        return { kind: 'agg', fn: x.upper, arg, distinct: aggDistinct, text: x.upper + '(' + argText + ')' };
       }
       this.next();
       return { kind: 'col', name: x.value };
@@ -175,18 +186,96 @@ class Parser {
       return { kind: 'not', expr: this.parseInList(left) };
     }
     if(this.atKw('IN')){ this.next(); return this.parseInList(left); }
+    // あいまい検索
+    if(this.atKw('NOT') && this.t[this.i + 1] && this.t[this.i + 1].type === 'kw' && this.t[this.i + 1].value === 'LIKE'){
+      this.next(); this.next();
+      return { kind: 'not', expr: { kind: 'like', left, pattern: this.parseOperand() } };
+    }
+    if(this.atKw('LIKE')){ this.next(); return { kind: 'like', left, pattern: this.parseOperand() }; }
+    // 範囲
+    if(this.atKw('NOT') && this.t[this.i + 1] && this.t[this.i + 1].type === 'kw' && this.t[this.i + 1].value === 'BETWEEN'){
+      this.next(); this.next();
+      const lo1 = this.parseOperand(); this.expectKw('AND'); const hi1 = this.parseOperand();
+      return { kind: 'not', expr: { kind: 'between', left, lo: lo1, hi: hi1 } };
+    }
+    if(this.atKw('BETWEEN')){
+      this.next();
+      const lo = this.parseOperand(); this.expectKw('AND'); const hi = this.parseOperand();
+      return { kind: 'between', left, lo, hi };
+    }
+    // NULL判定
+    if(this.atKw('IS')){
+      this.next();
+      let negate = false;
+      if(this.atKw('NOT')){ this.next(); negate = true; }
+      this.expectKw('NULL');
+      const nn = { kind: 'isnull', left };
+      return negate ? { kind: 'not', expr: nn } : nn;
+    }
     const opTok = this.peek();
     if(!opTok || opTok.type !== 'op') throw new SqlError('比較演算子が必要です');
     this.next();
+    // 右辺が ( SELECT ... ) なら副問合せ（1行1列を値として使う）
+    if(this.atPunct('(') && this.t[this.i + 1] && this.t[this.i + 1].type === 'kw' && this.t[this.i + 1].value === 'SELECT'){
+      this.next();
+      const sub = this.parseSelect(true);
+      this.expectPunct(')');
+      return { kind: 'cmp', left, op: opTok.value, right: { kind: 'subquery', select: sub } };
+    }
     return { kind: 'cmp', left, op: opTok.value, right: this.parseOperand() };
   }
   parseInList(left){
     this.expectPunct('(');
+    if(this.peek() && this.peek().type === 'kw' && this.peek().value === 'SELECT'){
+      const sub = this.parseSelect(true);
+      this.expectPunct(')');
+      return { kind: 'insub', left, select: sub };
+    }
     const items = [];
     do { items.push(this.parseOperand()); } while(this.atPunct(',') && (this.next(), true));
     this.expectPunct(')');
     return { kind: 'in', left, items };
   }
+}
+
+// ---- NULL / あいまい検索 / 副問合せ のヘルパ ----
+function isNull(v){ return v === null || v === undefined; }
+// NULL は文字列 'null' にせず、値として NULL のまま返す（表示側が — を出す）
+function nullSafe(v){ return isNull(v) ? null : String(v); }
+
+// 外部結合で相手がいないときに埋める、値が全て NULL の行
+function nullRow(sampleRows){
+  const sample = sampleRows[0];
+  if(!sample) return { values: {}, cols: [], unqualified: {} };
+  const values = {};
+  for(const key of Object.keys(sample.values)) values[key] = null;
+  return { values, cols: sample.cols.map(c => ({ ...c })), unqualified: {} };
+}
+
+// LIKE のパターンを正規表現へ。% は0文字以上、_ は1文字。
+function likeToRegExp(pattern){
+  const BS = String.fromCharCode(92);
+  const specials = ".*+?^${}()|[]\\";
+  const ANY = '[' + BS + 's' + BS + 'S]';
+  let out = '';
+  for(const ch of pattern){
+    if(ch === '%') out += ANY + '*';
+    else if(ch === '_') out += ANY;
+    else if(specials.indexOf(ch) !== -1) out += BS + ch;
+    else out += ch;
+  }
+  return new RegExp('^' + out + '$');
+}
+
+// 副問合せは実行中の表を参照する。
+let CURRENT_TABLES = null;
+function subqueryValues(select){
+  const r = runSelect(select, CURRENT_TABLES);
+  return r.rows.map(row => row[0]);
+}
+function subqueryScalar(select){
+  const vals = subqueryValues(select);
+  return vals.length ? vals[0] : null;
 }
 
 // ---- 値の解釈 ----
@@ -217,6 +306,7 @@ function resolveCol(row, name){
 }
 
 function evalOperand(node, row, groupRows){
+  if(node.kind === 'subquery') return subqueryScalar(node.select);
   if(node.kind === 'literal') return node.value;
   if(node.kind === 'col') return resolveCol(row, node.name);
   if(node.kind === 'agg') return evalAggregate(node, groupRows);
@@ -227,10 +317,10 @@ function evalAggregate(node, groupRows){
   if(!groupRows) throw new SqlError('集約関数はここでは使えません');
   if(node.fn === 'COUNT'){
     if(node.arg.kind === 'star') return String(groupRows.length);
-    return String(groupRows.filter(r => {
-      const v = resolveCol(r, node.arg.name);
-      return v !== null && v !== undefined && v !== '';
-    }).length);
+    const vals = groupRows.map(r => resolveCol(r, node.arg.name))
+      .filter(v => v !== null && v !== undefined && v !== '');
+    if(node.distinct) return String(new Set(vals.map(String)).size);
+    return String(vals.length);
   }
   const nums = groupRows.map(r => resolveCol(r, node.arg.name)).filter(v => v !== null && v !== undefined && v !== '');
   if(!nums.length) return '';
@@ -249,13 +339,34 @@ function evalCondition(node, row, groupRows){
     case 'and': return evalCondition(node.left, row, groupRows) && evalCondition(node.right, row, groupRows);
     case 'or':  return evalCondition(node.left, row, groupRows) || evalCondition(node.right, row, groupRows);
     case 'not': return !evalCondition(node.expr, row, groupRows);
+    case 'insub': {
+      const l = evalOperand(node.left, row, groupRows);
+      if(isNull(l)) return false;
+      return subqueryValues(node.select).some(v => !isNull(v) && compareValues(l, v) === 0);
+    }
+    case 'like': {
+      const l = evalOperand(node.left, row, groupRows);
+      const p = evalOperand(node.pattern, row, groupRows);
+      if(isNull(l) || isNull(p)) return false;
+      return likeToRegExp(String(p)).test(String(l));
+    }
+    case 'between': {
+      const l = evalOperand(node.left, row, groupRows);
+      if(isNull(l)) return false;
+      const lo = evalOperand(node.lo, row, groupRows);
+      const hi = evalOperand(node.hi, row, groupRows);
+      return compareValues(l, lo) >= 0 && compareValues(l, hi) <= 0;
+    }
+    case 'isnull': return isNull(evalOperand(node.left, row, groupRows));
     case 'in': {
       const l = evalOperand(node.left, row, groupRows);
       return node.items.some(it => compareValues(l, evalOperand(it, row, groupRows)) === 0);
     }
     case 'cmp': {
+      // NULL との比較は成立しない（IS NULL でだけ判定できる）
       const l = evalOperand(node.left, row, groupRows);
       const r = evalOperand(node.right, row, groupRows);
+      if(isNull(l) || isNull(r)) return false;
       const c = compareValues(l, r);
       switch(node.op){
         case '=':  return c === 0;
@@ -319,17 +430,41 @@ export function executeSelect(sql, tables){
     throw new SqlError(`${head} は実行できません。この端末はREAD-ONLYです`);
   }
   const ast = new Parser(tokenize(text)).parseSelect();
+  CURRENT_TABLES = tables;   // 副問合せから同じ表を参照するため
+  return runSelect(ast, tables);
+}
+
+// AST を実行する。副問合せもここを再帰的に通る。
+function runSelect(ast, tables){
 
   // FROM / JOIN
   let rows = loadTable(tables, ast.from);
   for(const j of ast.joins){
     const right = loadTable(tables, j.table);
     const joined = [];
+    const matchedRight = new Set();
     for(const l of rows){
+      let hit = false;
       for(const r of right){
         const merged = mergeRows(l, r);
         merged.unqualified = buildUnqualified(merged);
-        if(evalCondition(j.on, merged, null)) joined.push(merged);
+        if(evalCondition(j.on, merged, null)){ joined.push(merged); hit = true; matchedRight.add(r); }
+      }
+      // LEFT JOIN: 相手がいない左の行も、右側を NULL で埋めて残す
+      if(!hit && j.type === 'LEFT'){
+        const merged2 = mergeRows(l, nullRow(right));
+        merged2.unqualified = buildUnqualified(merged2);
+        joined.push(merged2);
+      }
+    }
+    // RIGHT JOIN: 相手がいない右の行も、左側を NULL で埋めて残す
+    if(j.type === 'RIGHT'){
+      const emptyLeft = nullRow(rows);
+      for(const r2 of right){
+        if(matchedRight.has(r2)) continue;
+        const merged3 = mergeRows(emptyLeft, r2);
+        merged3.unqualified = buildUnqualified(merged3);
+        joined.push(merged3);
       }
     }
     rows = joined;
@@ -377,7 +512,19 @@ export function executeSelect(sql, tables){
       return String(c.expr.value);
     });
     outRows = groups.map(g => ast.columns.map(c =>
-      String(evalOperand(c.expr, g.key, g.rows))));
+      nullSafe(evalOperand(c.expr, g.key, g.rows))));
+  }
+
+  // DISTINCT: 同じ内容の行を1つにまとめる
+  if(ast.distinct){
+    const seen = new Set();
+    const deduped = []; const keptGroups = [];
+    outRows.forEach((r, idx) => {
+      const key = JSON.stringify(r.map(v => isNull(v) ? null : String(v)));
+      if(seen.has(key)) return;
+      seen.add(key); deduped.push(r); keptGroups.push(groups[idx]);
+    });
+    outRows = deduped; groups = keptGroups;
   }
 
   // ORDER BY

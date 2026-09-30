@@ -1,11 +1,29 @@
 // Methods of the canonical App. Uses its UIManager, ChapterSession and success zones.
 import { ChapterSession, Phase } from './chapter-session.js?v=20260919-onboarding';
-import { ONBOARDING_STAGES as stages, ONBOARDING_TABLES, queryTokens, queryText, editQuery } from './onboarding.js';
+import { LEARNING_STAGES as stages, LEARNING_TABLES as ONBOARDING_TABLES } from './campaign.js?v=20260928-missions';
+import { queryTokens, queryText, editQuery } from './onboarding.js?v=20260928-missions';
 import { judgeByResult } from './sql-engine.js?v=20260919-onboarding';
 
 const STORAGE_KEY = 'neon_relay_campaign_v2';
 const validTokens = value => Array.isArray(value) && value.length <= 160 && value.every(t =>
   t && typeof t.t === 'string' && t.t.length <= 100 && typeof t.k === 'string');
+
+// 結果と同じ行を、元の表に入っている順に並べ直す（並べ替え前の姿）。
+function sourceOrder(st, result){
+  if(!result) return null;
+  const table = ONBOARDING_TABLES[st.tables[0]];
+  const key = row => JSON.stringify(row.map(String));
+  const wanted = new Map(result.rows.map(r => [key(r), r]));
+  const idx = result.cols.map(c => table.cols.indexOf(c));
+  const before = [];
+  for(const row of table.rows){
+    const projected = idx.map(i => row[i]);
+    const k = key(projected);
+    if(wanted.has(k)){ before.push(wanted.get(k)); wanted.delete(k); }
+  }
+  // 並べ替えで順番が実際に変わった場合だけ返す
+  return before.length === result.rows.length && key(before) !== key(result.rows) ? before : null;
+}
 
 export const learningActions = {
   restoreLearning(){
@@ -94,6 +112,7 @@ export const learningActions = {
     document.body.dataset.mission = st.id;
     this.ui.setMission(st.level, st.prompt);
     this.ui.setMissionVisible(this.missionVisible());
+    this.ui.showTutor('intro');   // CHARACTER ART CONTRACT: 問題冒頭
     this.ui.setLearningHud(this.stage, this.cleared.filter(Boolean).length, stages.length);
     this.ui.renderLearningSource(st.tables[0], ONBOARDING_TABLES[st.tables[0]], st.note);
     this.ui.renderTokens(st.tokens);
@@ -116,6 +135,8 @@ export const learningActions = {
 
   selectLearningToken(index){
     if(this.solved) return;
+    this.sound.tap();
+    this.ui.tutorOnEdit();
     this.ui.setFocus('query');
     this.learningCursor = { index, replace: true };
     this.refreshLearning();
@@ -124,6 +145,8 @@ export const learningActions = {
 
   tapLearningToken(t, k){
     if(this.solved || this.built.length >= 160) return;
+    this.sound.tap();
+    this.ui.tutorOnEdit();
     this.ui.hideHint();
     this.learningUndo.push({ tokens: this.built.map(t => ({ ...t })), cursor: { ...this.learningCursor } });
     const next = editQuery(this.built, { t, k }, this.learningCursor);
@@ -137,6 +160,8 @@ export const learningActions = {
 
   learningUtil(action){
     if(this.solved) return;
+    this.sound.tap();
+    this.ui.tutorOnEdit();
     this.ui.hideHint();
     this.ui.setFocus('query');
     if(action === 'after'){
@@ -178,18 +203,21 @@ export const learningActions = {
     // Sorting belongs to the mission contract, not to the player's choice to add ORDER BY.
     const judged = judgeByResult(sql, st.resultSet, ONBOARDING_TABLES, { ordered: st.ordered });
     if(!judged.ok){
+      this.sound.error();
       this.session.reject(judged.error ? 'sql_error' : 'sql_mismatch');
       if(judged.result) this.ui.renderResultSet(judged.result);
       const message = this.built.some(t => t.k === 'slot') ? '□を選んで、表の列や値をタップしてください。'
         : judged.error ? 'このSQLはまだ実行できません。選んだ語句を置き換えるか、ヒントで形を確認できます。'
         : st.ordered ? '結果を確認できました。数量の少ない順に並べてみましょう。'
         : '結果を確認できました。依頼された列と行になっているか、表と見比べてみましょう。';
+      this.ui.hideTutor();   // CHARACTER ART CONTRACT: 解答作業中は出さない
       this.ui.setFeedback(message, 'retry');
       document.body.dataset.workspace = 'compose';
       this.refreshLearning();
       this.saveLearning();
       return;
     }
+    this.sound.success();
     this.session.recordExecution({ built: sql, resultSet: judged.result, at: Date.now() });
     this.session.revealEvidence({ rows: judged.result.rows, sourceQuery: sql });
     this.session.clear();
@@ -204,6 +232,7 @@ export const learningActions = {
     this.ui.hideHint();
     this.ui.setFeedback('', '');
     document.body.dataset.workspace = 'success';
+    this.ui.showTutor('clear');   // CHARACTER ART CONTRACT: クリア画面
     this.ui.setLearningHud(this.stage, this.cleared.filter(Boolean).length, stages.length);
     this.ui.setRunLabel(this.stage === stages.length - 1 ? '▶ 本編へ' : '▶ 次の照会へ');
     this.ui.setRunDisabled(false);
@@ -215,11 +244,13 @@ export const learningActions = {
   learningHint(){
     if(this.solved) return;
     // 出しっぱなしにしない。表示中にもう一度押したら閉じる（支援段階は増やさない）。
-    if(this.ui.isHintVisible()){ this.ui.hideHint(); return; }
+    this.sound.tap();
+    if(this.ui.isHintVisible()){ this.ui.hideHint(); this.ui.hideTutor(); return; }
     this.session.requestHint();
     const st = stages[this.stage];
     const level = this.session.assistanceLevel;
     this.ui.showHint([st.hint1, st.hint2, st.skeleton, st.answers[0]][Math.max(0, level - 1)], level >= 3 ? '照会の形' : 'ヒント');
+    this.ui.showTutor('hint');   // CHARACTER ART CONTRACT: ヒント
     this.saveLearning();
   },
 
@@ -228,6 +259,9 @@ export const learningActions = {
     return { missionTitle: st.level, problem: st.prompt,
       tables: st.tables.map(name => ({ name, ...ONBOARDING_TABLES[name] })),
       executedSql: this.lastBuiltSql, result: this.lastResult, alternatives: [],
+      // 並べ替えの章は、行数も列数も変わらず順番だけが変わる。
+      // 何が起きたのかを見せるため、並べ替える前（表に入っている順）を添える。
+      orderedBefore: st.ordered ? sourceOrder(st, this.lastResult) : null,
       clearType: 'COMPLETE', clearLabel: '作業完了', clearNote: `${st.concept}を使って照会できました。`,
       dialogue: { lines: [{ speaker: '端末', text: st.reveal.text }], terminal: [] },
       commUnread: false, openZone: this.successZone };

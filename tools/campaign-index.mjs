@@ -1,12 +1,12 @@
 // tools/campaign-index.mjs
 // CANONICAL CAMPAIGN のindex変換。
-// campaign は M01〜M12（学習）+ CHAPTER 1〜6（本編）の一続き。
+// campaign は 学習ミッション（M01〜）+ CHAPTER 1〜6（本編）の一続き。
 // ゲートは「本編の章番号」で書き、ここで campaign index へ変換する。
 //
-//   storyStage(0) === 12  → CHAPTER 1
-//   storyStage(5) === 17  → CHAPTER 6
+//   storyStage(0) → CHAPTER 1 / storyStage(5) → CHAPTER 6
+//   学習ミッションの数は js/campaign.js が持つ（増えてもゲートは書き換えない）
 
-import { ONBOARDING_STAGES } from '../js/onboarding.js';
+import { LEARNING_STAGES as ONBOARDING_STAGES } from '../js/campaign.js';
 import { STAGES as STORY_STAGES } from '../js/data.js';
 
 export const STORY_OFFSET = ONBOARDING_STAGES.length;

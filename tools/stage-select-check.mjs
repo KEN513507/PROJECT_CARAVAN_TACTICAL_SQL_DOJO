@@ -29,6 +29,7 @@ async function openSelector(page){
 }
 
 import { STORY_OFFSET, CAMPAIGN_LENGTH, storyStage } from './campaign-index.mjs';
+import { enterCampaign } from './onboarding-ui-helpers.mjs';
 
 // campaign は M01〜M12 + CHAPTER 1〜6 の一続き。本編の章はオフセット後にある。
 const STAGE_COUNT = CAMPAIGN_LENGTH;
@@ -47,6 +48,12 @@ const STORY_TOTAL = CAMPAIGN_LENGTH - STORY_OFFSET;
       localStorage.setItem('caravan_tutorial_seen', 'true');
     });
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await enterCampaign(page);
+    // 「はじめから」を通ると起動演出のフラグも消える。章跳びの検証には不要なので置き直す。
+    await page.evaluate(() => {
+      localStorage.setItem('caravan_intro_seen', 'true');
+      localStorage.setItem('caravan_tutorial_seen', 'true');
+    });
     await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
 
     // ---- セレクタに全章が並び、全て選択可能であること ----
@@ -59,7 +66,7 @@ const STORY_TOTAL = CAMPAIGN_LENGTH - STORY_OFFSET;
     const title = await page.textContent('#stageDrawerTitle');
     check('DEBUGであることがタイトルに出る', /DEBUG/.test(title), title.trim());
     check('全章がセレクタに並ぶ', items.length === STAGE_COUNT, `count=${items.length}`);
-    check('M01〜M12が先に並ぶ', items.slice(0, STORY_OFFSET).every(i => i.name.includes('M0') || i.name.includes('M1')), items[0].name);
+    check('学習ミッションが先に並ぶ', items.slice(0, STORY_OFFSET).every(i => /M\d\d/.test(i.name)), items[0].name);
     check('未クリア章も disabled でない', items.every(i => !i.disabled), JSON.stringify(items.map(i => i.disabled)));
     check('未クリア章に locked クラスが付かない', items.every(i => !i.locked), JSON.stringify(items.map(i => i.locked)));
     check('CH5(Relation Task)も選べる', /CH.5/.test(items[STORY_OFFSET + 4].name), items[STORY_OFFSET + 4].name);

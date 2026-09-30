@@ -5,6 +5,18 @@
 
 const { chromium } = require('playwright');
 
+// スタート画面(SHELL)を抜けてキャンペーンへ入る。保存があれば「つづきから」。
+async function enterCampaign(page){
+  await page.locator('body[data-shell]').waitFor();
+  const shell = page.locator('#shell');
+  if(await shell.isHidden()) return;
+  const cont = page.locator('[data-shell-event="CONTINUE"]');
+  if(await cont.count()) await cont.click();
+  else await page.locator('[data-shell-event="NEW_GAME"]').click();
+  await shell.waitFor({ state: 'hidden' });
+}
+
+
 const URL = 'http://127.0.0.1:8000/';
 
 const VIEWPORTS = [
@@ -132,6 +144,7 @@ async function checkViewport(browser, viewport) {
     }, { learning: ci.learningCompletedPayload(), progress: ci.campaignProgress({ story: 0 }) });
     page.on('dialog', d => d.accept());
     await page.goto(URL, { waitUntil: 'networkidle' });
+    await enterCampaign(page);
     await runFlow(page);
     const overlaps = await collectOverlaps(page);
     return overlaps;

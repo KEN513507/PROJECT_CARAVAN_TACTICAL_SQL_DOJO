@@ -22,6 +22,7 @@ import { chromium } from 'playwright';
 import { campaignProgress, learningCompletedPayload, storyStage, CAMPAIGN_LENGTH } from './campaign-index.mjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { enterCampaign } from './onboarding-ui-helpers.mjs';
 
 const BASE_URL = process.env.UX_BASE_URL || 'http://127.0.0.1:8000/';
 const VIEWPORTS = {
@@ -57,6 +58,7 @@ async function boot(ctx, stageIndex){
        progress: campaignProgress({ story: stageIndex,
          storyCleared: [true, true, true, true, false, false] }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await enterCampaign(page);
   const ov = await page.waitForSelector('#storyOverlay.show', { timeout: 4000 }).catch(() => null);
   if(ov) await page.click('#storyContinueBtn');
   const sh = await page.waitForSelector('#ch1Sheet.show', { timeout: 4000 }).catch(() => null);

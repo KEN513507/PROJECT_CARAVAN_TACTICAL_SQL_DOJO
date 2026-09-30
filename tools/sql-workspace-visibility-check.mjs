@@ -11,6 +11,7 @@
 
 import { chromium } from 'playwright';
 import { campaignProgress, learningCompletedPayload, storyStage, CAMPAIGN_LENGTH } from './campaign-index.mjs';
+import { enterCampaign } from './onboarding-ui-helpers.mjs';
 
 const BASE_URL = process.env.UX_BASE_URL || 'http://127.0.0.1:8000/';
 const VIEWPORTS = {
@@ -20,10 +21,12 @@ const VIEWPORTS = {
 const MIN_FONT = 13;
 
 // 検証するSQL Query章（index, 期待するsource table数）
+// CH1〜CH3 は照会に使う表に加えて、伏線の ARCHIVE_SYNC_LOG が読める表として並ぶ。
+// 2枚になっても見出し・タップ領域・省略なし・スクロール領域1つ を満たすことをここで担保する。
 const QUERY_STAGES = [
-  { idx: 0, tables: 1, label: 'CH1' },
-  { idx: 1, tables: 1, label: 'CH2' },
-  { idx: 2, tables: 1, label: 'CH3' },
+  { idx: 0, tables: 2, label: 'CH1' },
+  { idx: 1, tables: 2, label: 'CH2' },
+  { idx: 2, tables: 2, label: 'CH3' },
   { idx: 3, tables: 2, label: 'CH4' },
   { idx: 5, tables: 2, label: 'CH6' }
 ];
@@ -55,6 +58,7 @@ async function boot(ctx, stageIndex){
          // CH6 は復元事実を前提にするため、ここでは復元済みとして入る
          reconstructedFacts: { 'EVAC_RECEPTION.E442.resident_id': 'R005' } }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await enterCampaign(page);
   const ov = await page.waitForSelector('#storyOverlay.show', { timeout: 3000 }).catch(() => null);
   if(ov) await page.click('#storyContinueBtn');
   const sh = await page.waitForSelector('#ch1Sheet.show', { timeout: 3000 }).catch(() => null);

@@ -89,6 +89,19 @@ button{ font-family:inherit; -webkit-appearance:none; appearance:none; }
   font-size:18px;
   cursor:pointer;
 }
+/* 設定への入口。ミュートと同じ見た目で隣に並べる。 */
+#settingsBtn{ flex:0 0 40px;
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid #334155;
+  border-radius:8px;
+  background:#0f172a;
+  color:#e2e8f0;
+  font-size:18px;
+  cursor:pointer; }
 #muteBtn[aria-pressed="true"]{ color:var(--amber); border-color:#92400e; background:#291a0a; }
 #muteBtn:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
 @keyframes pulse{ 50%{ opacity:.3; } }
@@ -987,9 +1000,9 @@ table.resultset td{ color:#cbd5e1; }
   position: fixed;
   bottom: 0; left: 50%;
   transform: translateX(-50%);
-  width: min(72vw, 340px);
-  aspect-ratio: 1/1;
-  background-image: url('../assets/characters/protagonist.png');
+  width: min(56vw, 264px);
+  aspect-ratio: 2/3;
+  background-image: url('../assets/characters/protagonist-sheet.webp');
   background-size: 200% 200%;
   background-repeat: no-repeat;
   pointer-events: none;
@@ -1005,6 +1018,237 @@ table.resultset td{ color:#cbd5e1; }
 #protagonist[data-mood="thinking"]   { background-position: 100% 0%; }
 #protagonist[data-mood="determined"] { background-position: 0% 100%; }
 #protagonist[data-mood="defeated"]   { background-position: 100% 100%; }
+
+/* ============================================================
+   CHARACTER ART CONTRACT (js/tutor.js と1対1)
+   立ち絵は UI の上に重なるレイヤー。出るのは body[data-tutor] が
+   付いている間だけで、intro / hint / clear の3瞬間のみ。
+
+   出し方はカットイン。小さく出しっぱなしにはしない。
+     左から急に入る → ゆっくり右へ流れる → 急に抜ける
+   再生しきったら animationend で自分から退場する（js/tutor.js）。
+   SQLを編集している間は data-tutor が外れるので再生中でも即座に消える。
+
+   大きく被せるぶん pointer-events:none は絶対。タップは下のUIへ抜ける。
+   ============================================================ */
+/* 立ち絵が動ける範囲。カットインは右へ流れて画面外へ抜けるので、
+   ここで切らないとPCでは430pxの枠からはみ出して外側に出てしまう。 */
+/* 立ち絵が動ける範囲。カットインは右へ流れて画面外へ抜けるので、
+   ここで切らないとPCでは430pxの枠からはみ出して外側に出てしまう。
+   --tutor-floor は「画面下の操作列の高さ」。js/tutor.js が実測して入れる。
+   立ち絵はこの床の上に立つので、ヒント／実行ボタンと場所を取り合わない。 */
+#tutorStage{
+  --tutor-size: min(96vw, 58vh, 460px);
+  --tutor-floor: 0px;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;       /* 枠の外へ出た分を切る */
+  pointer-events: none;
+  z-index: 55;            /* #app(10) やドロワー(40/50) より上、本編オーバーレイ(60)より下 */
+}
+
+/* 通信が開いた合図。床の上にだけ敷く帯。UIを消さず、立ち絵だけを読ませる。 */
+#tutorStage::before{
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: var(--tutor-floor);
+  height: calc(var(--tutor-size) * 1.02);
+  background:
+    linear-gradient(to top, rgba(2,6,23,.92) 0%, rgba(2,6,23,.66) 38%, rgba(2,6,23,0) 100%),
+    linear-gradient(to right, rgba(34,211,238,.10) 0%, rgba(34,211,238,0) 55%);
+  opacity: 0;
+}
+/* コンソールの走査線。濃くしない。 */
+#tutorStage::after{
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: var(--tutor-floor);
+  height: calc(var(--tutor-size) * 1.02);
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(34,211,238,.07) 0px, rgba(34,211,238,.07) 1px,
+    transparent 1px, transparent 3px);
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+body[data-tutor] #tutorStage::before,
+body[data-tutor] #tutorStage::after{
+  animation: tutorBand var(--tutor-ms, 2200ms) both;
+}
+
+#tutor{
+  position: absolute;
+  left: 0;
+  bottom: var(--tutor-floor);
+  /* 1コマは正方形。画面を大きく使う。 */
+  width: var(--tutor-size);
+  height: var(--tutor-size);
+  background-image: url('../assets/characters/tutor-sheet.webp');
+  background-size: 200% 200%;
+  background-repeat: no-repeat;
+  pointer-events: none;   /* UIの上に乗るが、操作は必ず下へ抜ける */
+  z-index: 55;            /* #app(10) やドロワー(40/50) より上、本編オーバーレイ(60)より下 */
+  opacity: 0;
+  will-change: transform, opacity;
+  /* 素材は背景を切り抜いてある(tools/cutout-character.mjs)。
+     切り抜いた輪郭にそのまま乗る縁光。この街の色で縁取る。 */
+  filter:
+    drop-shadow(0 0 2px rgba(34,211,238,.55))
+    drop-shadow(0 0 22px rgba(34,211,238,.34));
+  /* コマの下端で体が直線に切れるのだけ、わずかに落としてごまかす。 */
+  mask-image: linear-gradient(to top, transparent 0%, #000 7%);
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 7%);
+}
+
+/* 主人公が手にしている端末。NORAとの通信をここに出す。
+   立ち絵＝主人公（第九保全局の臨時監査員）。カットインは
+   「スマホでAIと話している」ことが一目で分かる形にする。
+   書体・発光は CIVIS FIELD CONSOLE と揃える。 */
+#tutorLink{
+  position: absolute;
+  right: 12px;
+  left: 12px;
+  bottom: calc(var(--tutor-floor) + var(--tutor-size) * .84);
+  z-index: 56;
+  padding: 9px 12px 10px;
+  border: 1px solid rgba(34,211,238,.42);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(3,10,26,.93), rgba(2,6,23,.88));
+  box-shadow: 0 0 26px rgba(34,211,238,.16), inset 0 1px 0 rgba(34,211,238,.14);
+  opacity: 0;
+}
+.tutor-link-head{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+/* NORAの端末アイコン。顔は出さない。街の色の信号紋。 */
+.nora-mark{
+  flex: 0 0 auto;
+  width: 16px; height: 16px;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 7px rgba(34,211,238,.6));
+}
+.nora-mark svg{ width: 100%; height: 100%; display: block; }
+.nora-mark .nora-far{ opacity: .5; }
+body[data-tutor] .nora-mark .nora-far{ animation: noraPing 1.9s ease-in-out infinite; }
+@keyframes noraPing{
+  0%, 100% { opacity: .18; }
+  50%      { opacity: .85; }
+}
+/* 相手が主人公自身（思考ログ）のときは、AI側の紋を落とす */
+#tutorLink[data-speaker="SELF"] .nora-mark{ opacity: .32; }
+#tutorLink[data-speaker="SELF"] .nora-mark .nora-far{ animation: none; }
+
+#tutorTag{
+  margin: 0;
+  flex: 1 1 auto;
+  font-family: "JetBrains Mono","Noto Sans JP",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size: 10px;
+  letter-spacing: .18em;
+  color: var(--cyan);
+  text-shadow: 0 0 16px rgba(34,211,238,.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+#tutorLine{
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #e2e8f0;
+}
+.tutor-who{
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-family: "JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: #94a3b8;
+}
+.tutor-say{ flex: 1 1 auto; }
+/* NORAの発話は街の色。主人公の思考は声に出していないので沈めて置く。 */
+#tutorLink[data-speaker="NORA"] .tutor-who{ border-color: rgba(34,211,238,.5); color: var(--cyan); }
+#tutorLink[data-speaker="NORA"] .tutor-say{ color: #cffafe; }
+#tutorLink[data-speaker="SELF"] .tutor-say{ color: #94a3b8; }
+
+body[data-tutor] #tutorLink{
+  animation: tutorTag var(--tutor-ms, 2200ms) both;
+}
+
+body[data-tutor] #tutor{
+  animation: tutorCutIn var(--tutor-ms, 2200ms) both;
+}
+
+/* 急に入る → ゆっくり流れる → 急に抜ける。
+   補間はキーフレームごとの timing-function で切り替える。
+   入りと抜けに一瞬だけ光を乗せる（回線がつながる/切れる合図）。 */
+@keyframes tutorCutIn{
+  0%{
+    opacity: 0;
+    transform: translate3d(-46%, 0, 0) scale(1.06);
+    filter: drop-shadow(0 0 2px rgba(34,211,238,.9)) drop-shadow(0 0 30px rgba(34,211,238,.8)) brightness(1.5);
+    animation-timing-function: cubic-bezier(.12, .84, .26, 1);   /* 入りは一気に */
+  }
+  13%{
+    opacity: 1;
+    transform: translate3d(-6%, 0, 0) scale(1.01);
+    filter: drop-shadow(0 0 2px rgba(34,211,238,.55)) drop-shadow(0 0 22px rgba(34,211,238,.34)) brightness(1);
+    animation-timing-function: linear;                            /* ここからゆっくり流す */
+  }
+  82%{
+    opacity: 1;
+    transform: translate3d(12%, 0, 0) scale(1);
+    filter: drop-shadow(0 0 2px rgba(34,211,238,.55)) drop-shadow(0 0 22px rgba(34,211,238,.34)) brightness(1);
+    animation-timing-function: cubic-bezier(.74, .02, .96, .3);   /* 抜けは一気に */
+  }
+  100%{
+    opacity: 0;
+    transform: translate3d(58%, 0, 0) scale(.98);
+    filter: drop-shadow(0 0 2px rgba(34,211,238,.9)) drop-shadow(0 0 30px rgba(34,211,238,.7)) brightness(1.4);
+  }
+}
+@keyframes tutorBand{
+  0%   { opacity: 0; }
+  13%  { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes tutorTag{
+  0%   { opacity: 0; transform: translateX(14px); }
+  13%  { opacity: 1; transform: translateX(0); }
+  82%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-12px); }
+}
+
+/* ポーズは 2x2 シートの1コマ。左上=満面の笑み / 右上=微笑み / 左下=話しかけ */
+#tutor[data-pose="happy"]    { background-position: 0% 0%; }
+#tutor[data-pose="calm"]     { background-position: 100% 0%; }
+#tutor[data-pose="thinking"] { background-position: 0% 100%; }
+
+/* 動きを減らす設定なら、横移動はやめて出入りだけにする。長さは変えない。 */
+@media (prefers-reduced-motion: reduce){
+  @keyframes tutorCutIn{
+    0%{ opacity: 0; }
+    13%{ opacity: 1; }
+    82%{ opacity: 1; }
+    100%{ opacity: 0; }
+  }
+  @keyframes tutorTag{
+    0%{ opacity: 0; }
+    13%{ opacity: 1; }
+    82%{ opacity: 1; }
+    100%{ opacity: 0; }
+  }
+}
 #app { position: relative; z-index: 10; }
 
 /* ---- PC表示を iPhone 16e と同じ枠に収める ---- */
@@ -1040,6 +1284,19 @@ table.resultset td{ color:#cbd5e1; }
   #protagonist {
     position: fixed;
     bottom: calc(50% - 466px + 8px);
+  }
+  /* 立ち絵も430pxの枠の中に収める */
+  /* bottom は viewport 基準で測った値なのでそのまま使える。横だけ枠に寄せる。 */
+  /* 舞台を430pxの枠にぴったり重ねる。立ち絵はこの中だけを左から右へ流れ、
+     枠の外へ出た分は overflow:hidden が切る。 */
+  #tutorStage {
+    --tutor-size: min(430px, 58dvh);
+    left: 50%; top: 50%; right: auto; bottom: auto;
+    transform: translate(-50%, -50%);
+    width: 430px;
+    height: 932px;
+    max-height: 95dvh;
+    border-radius: 24px;
   }
 }
 
@@ -1518,8 +1775,11 @@ body[data-workspace="success"] #actionBar{ flex-shrink:0; min-height:48px; }
 body[data-workspace="success"] #runBtn{ flex:1 1 auto; }
 
 /* 中央のスクロール領域。下部Actionに会話が隠れないようにする */
+/* 開いているZoneが残りの高さを使い切る（閉じたZoneの下に空白を残さない）。 */
+.zone.open{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+.zone.open > .zone-body{ flex:1 1 auto; min-height:0; overflow-y:auto; }
 #successZones{
-  flex:1 1 auto; min-height:0; overflow-y:auto;
+  flex:1 1 auto; min-height:0; overflow-y:hidden;
   -webkit-overflow-scrolling:touch;
   display:flex; flex-direction:column; gap:6px;
   padding-bottom:8px;
@@ -1578,9 +1838,33 @@ body[data-workspace="success"] #runBtn{ flex:1 1 auto; }
   margin-top:3px; padding:8px 10px; border-radius:8px;
   background:#070d1a; border:1px solid #1e293b;
   font-family:"JetBrains Mono","Noto Sans JP",ui-monospace,monospace;
-  font-size:14px; line-height:1.55; color:#67e8f9; word-break:break-all;
+  font-size:14px; line-height:1.55; color:#67e8f9;
+  /* 語中で割らない。STOCK が "S / TOCK" に割れると識別子が読めなくなるため、
+     まず空白で折り返し、1語が入り切らないときだけ割る。 */
+  word-break:normal; overflow-wrap:break-word;
 }
 .zone-sql.alt{ color:#a3e635; }
+
+/* ---- 並べ替えの前 → 後（ORDER BY の章だけ出る） ----
+   軽いアニメーション: transform と opacity のみ。JSのループもレイアウト再計算も使わない。 */
+.zone-grid.before td{ color:#64748b; }
+.zone-grid.before th{ color:#475569; }
+.order-arrow{
+  margin:6px 0 2px; font-size:13px; font-weight:800; color:var(--amber); letter-spacing:.02em;
+}
+.zone-grid.after tbody tr{
+  animation:orderSlide .32s ease both;
+}
+.zone-grid.after tbody tr:nth-child(2){ animation-delay:.06s; }
+.zone-grid.after tbody tr:nth-child(3){ animation-delay:.12s; }
+.zone-grid.after tbody tr:nth-child(4){ animation-delay:.18s; }
+@keyframes orderSlide{
+  from{ opacity:0; transform:translateY(-8px); }
+  to{ opacity:1; transform:none; }
+}
+@media (prefers-reduced-motion: reduce){
+  .zone-grid.after tbody tr{ animation:none; }
+}
 #zoneResultBody .alt-none{
   margin-top:8px; font-size:13px; color:#64748b;
 }
@@ -1674,7 +1958,7 @@ body.learning-ui[data-focus="source"] #monitorWrap { flex:0 0 auto; min-height:0
 body.learning-ui[data-focus="source"] #monitor    { min-height:0; max-height:66px; }
 body.learning-ui[data-focus="source"] #utilBar    { display:none; }
 /* 表を読んでいる間はトークン欄を主役にしない。下限を下げて表へ高さを譲る。 */
-body.learning-ui[data-focus="source"] #tokenPad   { min-height:88px; }
+body.learning-ui[data-focus="source"] #tokenPad   { min-height:112px; }
 
 /* ---- SQLを書いているとき ---- */
 /* 表は見出し行だけ残す。どの列があるかは失わない。 */
@@ -1684,12 +1968,23 @@ body.learning-ui[data-focus="query"] #monitorWrap { flex:0 1 auto; min-height:52
 body.learning-ui[data-focus="query"] #monitor     { height:auto; min-height:44px; max-height:34vh; }
 body.learning-ui[data-focus="query"] #utilBar     { display:flex; }
 
+/* ---- ヒントを開いている間 ----
+   ヒントは読むためのものなので、全文が見えることを最優先にする。
+   SQL欄の高さ制限を外し、表とトークンを縮める。 */
+body.learning-ui.hint-open #monitorWrap { flex:0 0 auto; max-height:none; }
+body.learning-ui.hint-open #monitor     { max-height:66px; }
+body.learning-ui.hint-open #hintLine    { max-height:none; overflow:visible; }
+body.learning-ui.hint-open #schemaPanel { flex:0 1 auto; max-height:22vh; min-height:0; }
+body.learning-ui.hint-open #tokenPad    { min-height:88px; }
+
 body.learning-ui #tokenPad { order:7; flex:1 1 auto; min-height:182px; max-height:48vh; overflow:auto; }
 /* 分類ラベルを行内へ寄せ、縦積みで高さを食わないようにする。
    M01(6トークン)が1画面に収まることを優先する。 */
-body.learning-ui .token-group { display:flex; flex-direction:row; align-items:center; gap:8px; margin-bottom:6px; }
-body.learning-ui .group-label { flex:0 0 46px; font-size:10px; margin:0; color:#64748b; line-height:1.25; }
-body.learning-ui .token-row { flex:1 1 auto; min-width:0; }
+/* 分類は置かない。1つの並びにしてトークン欄の高さを節約する。 */
+body.learning-ui #tokenPad { display:flex; flex-direction:row; flex-wrap:wrap; align-content:flex-start; gap:6px; }
+body.learning-ui .token-group { display:contents; }
+body.learning-ui .token-row { display:contents; }
+body.learning-ui .group-label { display:none; }
 body.learning-ui .tok { min-height:44px; font-size:13px; }
 body.learning-ui #actionBar { order:9; display:flex; flex:0 0 auto; gap:5px; }
 body.learning-ui #actionBar .act { min-height:48px; font-size:14px; }
@@ -1702,4 +1997,222 @@ body.learning-ui button:disabled { opacity:.45; }
   body.learning-ui #app { height:100dvh; padding:12px 18px; }
   body.learning-ui #schemaPanel { max-height:340px; }
   body.learning-ui #tokenPad { max-height:180px; flex-basis:150px; }
+}
+
+/* ============ FOCUS CONTRACT: 本編 CHAPTER 1〜6 ============
+   学習ミッションと同じ規則。今操作しているエリアだけを大きく見せる。
+   タイマーと行数予測は本編の学習道具なので残す。 */
+body:not(.learning-ui) #schemaPanel,
+body:not(.learning-ui) #monitorWrap { transition:max-height .18s ease, min-height .18s ease; }
+
+/* 表を読んでいるとき */
+body.ch1-ui[data-focus="source"] #schemaPanel { flex:0 1 auto; min-height:120px; max-height:34vh; }
+body.ch1-ui[data-focus="source"] #monitorWrap { flex:0 0 auto; max-height:74px; }
+body.ch1-ui[data-focus="source"] #monitor     { height:auto; max-height:66px; }
+body.ch1-ui[data-focus="source"] #tokenPad    { flex:1 1 auto; min-height:230px; }
+
+/* SQLを書いているとき: 表は見出しだけ残す */
+body.ch1-ui[data-focus="query"] #schemaPanel { flex:0 0 auto; min-height:0; max-height:118px; }
+body.ch1-ui[data-focus="query"] #monitorWrap { flex:0 1 auto; min-height:52px; max-height:38vh; }
+body.ch1-ui[data-focus="query"] #monitor     { height:auto; min-height:44px; max-height:34vh; }
+body.ch1-ui[data-focus="query"] #tokenPad    { flex:1 1 auto; min-height:150px; }
+
+/* ヒントを開いている間は全文を出す（学習章と同じ） */
+body.ch1-ui.hint-open #monitorWrap { flex:0 0 auto; max-height:none; }
+body.ch1-ui.hint-open #monitor     { max-height:66px; }
+body.ch1-ui.hint-open #hintLine    { max-height:none; overflow:visible; }
+body.ch1-ui.hint-open #schemaPanel { flex:0 1 auto; max-height:22vh; min-height:0; }
+body.ch1-ui.hint-open #tokenPad    { min-height:88px; }
+
+/* ---- 本編 CHAPTER 2〜6（ch1-ui ではない章）にも同じ規則 ---- */
+body:not(.learning-ui):not(.ch1-ui)[data-focus="source"] #schemaPanel { max-height:34vh; }
+body:not(.learning-ui):not(.ch1-ui)[data-focus="source"] #monitorWrap { max-height:80px; }
+body:not(.learning-ui):not(.ch1-ui)[data-focus="source"] #tokenPad    { min-height:150px; }
+
+body:not(.learning-ui):not(.ch1-ui)[data-focus="query"] #schemaPanel { max-height:120px; }
+body:not(.learning-ui):not(.ch1-ui)[data-focus="query"] #monitorWrap { max-height:38vh; }
+body:not(.learning-ui):not(.ch1-ui)[data-focus="query"] #tokenPad    { min-height:230px; }
+
+/* Relation Task の章(CH5)は表もトークンも使わないので対象外 */
+body[data-workspace="relation"] #schemaPanel,
+body[data-workspace="relation"] #tokenPad { max-height:none; min-height:0; }
+
+/* ============================================================
+   SHELL（スタート / 設定 / 上書き確認）
+   状態は body[data-shell] に出る。SSOT は js/shell-state.js。
+   キャンペーン本体(#app)の上に全面で被さる。PLAY のときは hidden。
+   ============================================================ */
+#shell{
+  position:fixed; inset:0;
+  z-index:80;                   /* 本編オーバーレイ(60/70)より上。シェルが最外殻 */
+  display:flex;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(34,211,238,.10), transparent 62%),
+    #020617;
+  color:#e2e8f0;
+  overscroll-behavior:contain;
+}
+#shell[hidden]{ display:none !important; }
+.shell-screen{
+  flex:1 1 auto;
+  display:flex; flex-direction:column;
+  padding:24px 20px calc(24px + env(safe-area-inset-bottom));
+  max-width:430px; margin:0 auto; width:100%;
+  overflow-y:auto;
+}
+
+/* ---- スタート画面 ---- */
+.shell-title{ justify-content:center; gap:40px; }
+.shell-brand{ text-align:center; }
+.shell-eyebrow{
+  margin:0 0 10px; font-family:"JetBrains Mono",ui-monospace,monospace;
+  font-size:11px; letter-spacing:.34em; color:#64748b;
+}
+.shell-logo{
+  margin:0; font-family:"Orbitron",sans-serif; font-weight:900;
+  font-size:clamp(30px,10vw,44px); letter-spacing:.14em; color:var(--cyan);
+  text-shadow:0 0 28px rgba(34,211,238,.42);
+}
+.shell-tag{ margin:12px 0 0; font-size:13px; color:#94a3b8; letter-spacing:.06em; }
+.shell-menu{ display:flex; flex-direction:column; gap:12px; }
+
+.shell-btn{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  grid-template-areas:"ico label" "ico sub";
+  align-items:center;
+  gap:2px 14px;
+  width:100%; min-height:60px;
+  padding:14px 18px;
+  border:1px solid var(--line); border-radius:14px;
+  background:rgba(15,23,42,.72); color:#e2e8f0;
+  font-size:17px; font-weight:700; letter-spacing:.06em;
+  text-align:left; cursor:pointer;
+  transition:border-color .18s ease, background .18s ease, transform .1s ease;
+}
+.shell-btn:active{ transform:translateY(1px); }
+.shell-btn:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+.shell-ico{ grid-area:ico; font-size:18px; color:var(--cyan); }
+.shell-label{ grid-area:label; }
+.shell-sub{
+  grid-area:sub; font-size:12px; font-weight:400; letter-spacing:.04em; color:#94a3b8;
+  font-family:"JetBrains Mono",ui-monospace,monospace;
+}
+.shell-btn.primary{
+  border-color:rgba(34,211,238,.55);
+  background:linear-gradient(180deg, rgba(34,211,238,.18), rgba(15,23,42,.8));
+}
+.shell-btn.quiet{ background:transparent; color:#94a3b8; min-height:52px; font-size:15px; }
+.shell-btn.quiet .shell-ico{ color:#64748b; }
+.shell-btn.danger{ border-color:rgba(248,113,113,.5); color:#fecaca; }
+
+/* ---- 設定画面 ---- */
+.shell-settings{ gap:22px; }
+.shell-head{ display:flex; align-items:center; gap:14px; }
+.shell-head h2{ margin:0; font-size:18px; letter-spacing:.1em; }
+.shell-back{
+  border:1px solid var(--line); border-radius:10px; padding:9px 13px;
+  background:transparent; color:#94a3b8; font-size:14px; cursor:pointer;
+}
+.shell-back:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+.shell-rows{ display:flex; flex-direction:column; gap:2px; }
+.shell-row{
+  display:flex; align-items:center; gap:14px;
+  min-height:56px; padding:10px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:15px; cursor:pointer;
+}
+.shell-row-name{ flex:1 1 auto; }
+.shell-row input[type="checkbox"]{ position:absolute; opacity:0; width:0; height:0; }
+.shell-switch{
+  flex:0 0 auto; width:46px; height:27px; border-radius:99px;
+  background:#1e293b; border:1px solid var(--line); position:relative;
+  transition:background .18s ease, border-color .18s ease;
+}
+.shell-switch::after{
+  content:""; position:absolute; top:3px; left:3px;
+  width:19px; height:19px; border-radius:50%; background:#64748b;
+  transition:transform .18s ease, background .18s ease;
+}
+.shell-row input:checked ~ .shell-switch{ background:rgba(34,211,238,.26); border-color:rgba(34,211,238,.6); }
+.shell-row input:checked ~ .shell-switch::after{ transform:translateX(19px); background:var(--cyan); }
+.shell-row input:focus-visible ~ .shell-switch{ outline:2px solid var(--cyan); outline-offset:2px; }
+.shell-row-range{ flex-wrap:wrap; }
+.shell-row-range input[type="range"]{ flex:1 1 140px; accent-color:var(--cyan); }
+.shell-row-value{
+  flex:0 0 34px; text-align:right;
+  font-family:"JetBrains Mono",ui-monospace,monospace; font-size:13px; color:#94a3b8;
+  font-variant-numeric:tabular-nums;
+}
+.shell-note{ margin:0; font-size:12px; line-height:1.7; color:#64748b; }
+
+/* ---- 上書き確認 ---- */
+.shell-confirm{ justify-content:center; gap:18px; text-align:center; }
+.shell-confirm h2{ margin:0; font-size:20px; letter-spacing:.08em; }
+.shell-warn{ margin:0; font-size:14px; line-height:1.8; color:#fca5a5; }
+.shell-choices{ display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+.shell-choices .shell-btn{ grid-template-columns:1fr; grid-template-areas:"label"; justify-items:center; text-align:center; }
+
+/* PC表示は本体と同じ430pxの枠に収める */
+@media (min-width: 768px){
+  #shell{
+    left:50%; top:50%; right:auto; bottom:auto;
+    transform:translate(-50%,-50%);
+    width:430px; height:932px; max-height:95dvh;
+    border:1px solid var(--line); border-radius:24px; overflow:hidden;
+  }
+}
+
+
+/* ============================================================
+   STORY CG（イベントCG / js/story-cg.js と1対1）
+   ノベルゲーム風。静かにフェードインし、台詞を絵の上に重ねる。
+   学習のカットイン（横へ流れる）とは別物。ここは動かさない。
+
+   CG の URL は CSS に書かない。未解禁の絵を先読みさせないため、
+   background-image は js/ui.js が解禁後にだけインラインで与える。
+   ============================================================ */
+.story-cg{
+  position: relative;
+  margin: 18px calc(-1 * var(--story-pad, 16px));
+  padding: 0;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 1.1s ease, transform 1.1s ease;
+}
+.story-cg.in{ opacity: 1; transform: none; }
+.story-cg-art{
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background-size: contain;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  /* 街の色をうっすら床に落とす。切り抜きの足元が浮かないように */
+  background-color: transparent;
+  filter: drop-shadow(0 0 3px rgba(34,211,238,.28)) drop-shadow(0 0 30px rgba(34,211,238,.18));
+}
+.story-cg-line{
+  margin: 0;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  /* 絵の裾に重ねる。読めることを最優先にして、下から暗幕を立てる */
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to top, rgba(2,6,23,.96) 0%, rgba(2,6,23,.86) 55%, rgba(2,6,23,0) 100%);
+  color: #e2e8f0;
+  font-size: 15px;
+  line-height: 1.9;
+  letter-spacing: .02em;
+  text-shadow: 0 1px 12px rgba(2,6,23,.9);
+}
+.story-cg-line::before{
+  content: "";
+  display: block;
+  width: 34px; height: 2px;
+  margin-bottom: 10px;
+  background: var(--cyan);
+  box-shadow: 0 0 14px rgba(34,211,238,.55);
+}
+@media (prefers-reduced-motion: reduce){
+  .story-cg{ transition: opacity .4s ease; transform: none; }
+  .story-cg.in{ transform: none; }
 }

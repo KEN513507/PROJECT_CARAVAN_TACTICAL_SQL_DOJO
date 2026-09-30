@@ -11,6 +11,7 @@ import { campaignProgress, learningCompletedPayload } from './campaign-index.mjs
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { enterCampaign } from './onboarding-ui-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -42,6 +43,7 @@ async function openApp(browser, vp){
     localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
   }, { learning: learningCompletedPayload(), progress: campaignProgress({ story: 0 }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await enterCampaign(page);
   await page.waitForSelector('#tokenPad .tok', { timeout: 30000 });
   return { ctx, page, jsErrors };
 }

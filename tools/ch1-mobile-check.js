@@ -6,6 +6,18 @@
 
 const { chromium } = require('playwright');
 
+// スタート画面(SHELL)を抜けてキャンペーンへ入る。保存があれば「つづきから」。
+async function enterCampaign(page){
+  await page.locator('body[data-shell]').waitFor();
+  const shell = page.locator('#shell');
+  if(await shell.isHidden()) return;
+  const cont = page.locator('[data-shell-event="CONTINUE"]');
+  if(await cont.count()) await cont.click();
+  else await page.locator('[data-shell-event="NEW_GAME"]').click();
+  await shell.waitFor({ state: 'hidden' });
+}
+
+
 const URL = 'http://127.0.0.1:8000/';
 const VIEWPORTS = [
   { name: 'iPhone SE',  width: 375, height: 667 },
@@ -100,6 +112,7 @@ async function runViewport(browser, vp){
   }, CAMPAIGN_SEED);
 
   await page.goto(URL, { waitUntil: 'networkidle' });
+  await enterCampaign(page);
 
   // 本編入口: CIVIS boot → Opening Story → 調査画面（セリフは自動表示しない）
   await page.waitForSelector('#storyOverlay.show', { timeout: 10000 });
@@ -236,6 +249,7 @@ async function runAssistPaths(browser, vp){
   }, CAMPAIGN_SEED);
     page.on('dialog', d => d.accept());
     await page.goto(URL, { waitUntil: 'networkidle' });
+    await enterCampaign(page);
     await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
     return { ctx, page };
   }
@@ -280,6 +294,7 @@ async function runTimeout(browser, vp){
     localStorage.setItem('caravan_progress', JSON.stringify(seed.progress));
   }, CAMPAIGN_SEED);
   await page.goto(URL, { waitUntil: 'networkidle' });
+  await enterCampaign(page);
   await page.waitForSelector('#tokenPad .tok', { timeout: 10000 });
   await page.click('.tok[data-token="SELECT"]');
   await page.waitForSelector('#ch1Sheet.show', { timeout: 70000 });

@@ -219,11 +219,12 @@ function eq(label, actual, expected){
     check('[E] 空文字と 0 が同一視されていない',
       q("SELECT id FROM NV WHERE val = ''").rows.length === 1 && q("SELECT id FROM NV WHERE val = '0'").rows.length === 1);
     eq('[E] COUNT(*) は NULL 行も数える', q('SELECT COUNT(*) AS c FROM NV').rows[0][0], '4');
-    // M16 BLOCKER: IS NULL は未対応。未対応であることを明示し、無言で誤判定しないこと。
-    let isNullMsg = '';
-    try { q('SELECT id FROM NV WHERE val IS NULL'); } catch(e){ isNullMsg = e.message; }
-    check('[E][M16 BLOCKER] IS NULL は未対応として明示的に失敗する（誤った結果を返さない）',
-      isNullMsg.length > 0, isNullMsg || '(例外なし = 誤って成功している)');
+    // IS NULL / IS NOT NULL（FE出題範囲。外部結合の判定にも使う）
+    eq('[E] IS NULL が NULL の行だけを返す', q('SELECT id FROM NV WHERE val IS NULL').rows.map(r => r[0]).join(''), 'A');
+    eq('[E] IS NOT NULL が NULL 以外を返す', q('SELECT id FROM NV WHERE val IS NOT NULL').rows.map(r => r[0]).join(''), 'BCD');
+    // NULL との比較は成立しない（三値論理の最小版）
+    eq('[E] NULL は = の比較に一致しない', q("SELECT id FROM NV WHERE val = 'x'").rows.map(r => r[0]).join(''), 'D');
+    eq('[E] NULL は <> の比較にも一致しない', q("SELECT id FROM NV WHERE val <> 'x'").rows.map(r => r[0]).join(''), 'BC');
   }
 
   console.log('');

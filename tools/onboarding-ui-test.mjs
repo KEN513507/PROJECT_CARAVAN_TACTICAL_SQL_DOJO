@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { ONBOARDING_STAGES as stages } from '../js/onboarding.js';
-import { boot, readSql, tap, replace, run, solveMission } from './onboarding-ui-helpers.mjs';
+import { boot, readSql, tap, replace, run, solveMission, focusQuery, reopen } from './onboarding-ui-helpers.mjs';
 
 const browser = await chromium.launch();
 try {
@@ -15,7 +15,7 @@ try {
     assert.equal(await page.locator('#timer').isVisible(), false);
     assert.equal(await page.locator('#xp').isVisible(), false);
     assert.ok(!/CIVIS|CASE 53|Aya|アヤ/.test(await page.locator('#hud').innerText()));
-    assert.equal(await page.locator('#schemaPanel th').allTextContents().then(x => x.join(',')), '品目,棚,数量');
+    assert.equal(await page.locator('#schemaPanel th').allTextContents().then(x => x.join(',')), '品目,棚,数量,単位');
 
     // Both valid-but-wrong and malformed SQL keep the draft and can be fixed in place.
     await page.locator('[data-source-col="2"]').click();
@@ -27,15 +27,18 @@ try {
     await page.locator('#runBtn').click();
     assert.equal(await readSql(page), 'SELECT FROM FROM STOCK');
     await page.locator('#hintBtn').click();
-    await page.reload();
+    await reopen(page);
     await page.locator('#monitor .query-token').first().waitFor();
     assert.equal(await readSql(page), 'SELECT FROM FROM STOCK');
+    // 再読み込み直後は表が主役。SQL欄が小さいときの1回目のタップは拡大だけなので、
+    // 実プレイと同じく SQL 欄へ入ってから語を選ぶ。
+    await focusQuery(page);
     await page.locator('#monitor .query-token').nth(1).click();
     await tap(page, 'item');
     await run(page);
     assert.equal(await page.locator('.zone-clear-type').textContent(), '作業完了');
     assert.ok(!/XP|半額|未達|PRACTICE/.test(await page.locator('#zoneResultBody').innerText()));
-    await page.reload();
+    await reopen(page);
     await page.locator('body[data-workspace="success"]').waitFor();
 
     let previous = await readSql(page);
@@ -57,18 +60,15 @@ try {
       }
     }
     assert.deepEqual(await page.locator('#zoneResultBody th').allTextContents(), ['品目', '依頼合計']);
-    // campaign は M01〜M12 のあと本編 CHAPTER 1 へ続く。M12 で終わらない。
+    // M12 で campaign は終わらない。学習ミッションは続き、最後に本編 CHAPTER 1〜6 が来る。
     await page.locator('#runBtn').click();
-    const opening = page.locator('#storyOverlay.show');
-    if(await opening.isVisible().catch(() => false)) await page.locator('#storyContinueBtn').click();
-    await page.locator('body.ch1-ui').waitFor();
-    assert.ok((await page.locator('#missionLevel').textContent()).includes('CHAPTER 1'),
-      'M12 の次は本編 CHAPTER 1');
-    assert.ok((await page.locator('#stageLabel').textContent()).includes('CH.1/6'),
-      'HUD は本編の章番号を示す');
+    assert.equal(await page.locator('body').getAttribute('data-mission'), 'M13',
+      'M12 の次は次の学習ミッション');
     await page.locator('#stageLabel').click();
-    assert.equal(await page.locator('#stageDrawer .stage-item').count(), 18,
-      'ステージ一覧は M01〜M12 + CHAPTER 1〜6');
+    const total = await page.locator('#stageDrawer .stage-item').count();
+    assert.ok(total > 12, `ステージ一覧は学習ミッション + 本編（${total}件）`);
+    const names = await page.locator('#stageDrawer .stage-item').allTextContents();
+    assert.ok(names.at(-1).includes('CHAPTER 6'), '最後は本編 CHAPTER 6');
     await page.locator('#stageDrawerClose').click();
     assert.deepEqual(errors, []);
     await context.close();

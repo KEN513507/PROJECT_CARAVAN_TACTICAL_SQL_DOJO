@@ -13,6 +13,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { checkContract, measureRect, summarize } from './ux-test-helpers.mjs';
+import { enterCampaign } from './onboarding-ui-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -43,6 +44,7 @@ async function newTestPage(browser, vp){
     // networkidle は外部フォントと音源404の影響で並列実行時に不安定になるため使わない。
     // 準備完了の判定は後続の明示的な待機(#storyOverlay / #tokenPad .tok)で行う。
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await enterCampaign(page);
   } catch(err){
     console.log('UX_DECODER = FAIL');
     console.log('REASON = server unavailable');

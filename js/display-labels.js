@@ -26,6 +26,7 @@ export const FIELD_LABELS = Object.freeze({
   item:                   '品目',
   quantity:               '数量',
   shelf: '棚',
+  unit: '単位',
   desk: '依頼元',
   request_total: '依頼合計',
   'COUNT(*)': '件数',
@@ -52,6 +53,14 @@ export const FIELD_LABELS = Object.freeze({
   received_at:            '受付時刻',
   authenticated_resident: '認証住民',
   authenticated_at:       '認証時刻',
+
+  // アーカイブ端末の同期ログ
+  entry_id:               '記録番号',
+  at:                     '発生時刻',
+  node:                   'ノード',
+  affected_rows:          '影響行数',
+  operator_id:            '実行者ID',
+  result:                 '結果',
 
   // 集計結果の列（AS で付ける別名）
   total_quantity:         '合計数量',
@@ -88,4 +97,4 @@ export function hasFieldLabel(col){
 
 // 表名は identifier のまま扱う（SQL Editor のトークンと一致させるため）。
 // 表の説明が要る場面では、この関数ではなく Note / NORA 側の文で説明する。
-export function tableLabel(name){ return ({ STOCK: '備品在庫', REQUESTS: '補充依頼' })[name] || String(name); }
+export function tableLabel(name){ return ({ STOCK: '備品在庫', REQUESTS: '補充依頼', ARCHIVE_SYNC_LOG: '同期ログ' })[name] || String(name); }

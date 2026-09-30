@@ -14,6 +14,7 @@
 
 import { chromium } from 'playwright';
 import { campaignProgress, learningCompletedPayload, storyStage, STORY_OFFSET } from './campaign-index.mjs';
+import { enterCampaign, startFresh } from './onboarding-ui-helpers.mjs';
 
 const BASE_URL = process.env.UX_BASE_URL || 'http://127.0.0.1:8000/';
 const VP = { width: 393, height: 852 };
@@ -42,6 +43,7 @@ async function boot(ctx, opts = {}){
   }, { ...opts, learning: learningCompletedPayload(),
        progress: opts.progress || campaignProgress({ story: 0 }) });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await enterCampaign(page);
   const ov = await page.waitForSelector('#storyOverlay.show', { timeout: 4000 }).catch(() => null);
   if(ov) await page.click('#storyContinueBtn');
   const sh = await page.waitForSelector('#ch1Sheet.show', { timeout: 4000 }).catch(() => null);
@@ -151,7 +153,7 @@ const progressOf = page => page.evaluate(() => {
     }
 
     // ================= C: RESTART STATE BOUNDARY =================
-    // 復元事実を持った状態で NEW GAME 相当（進捗なしで起動）した場合の残留を見る。
+    // 復元事実を持った状態でスタート画面から「はじめから」を選んだときの残留を見る。
     {
       // 1) CH5 を解いて reconstructedFacts を作る
       const { page } = await boot(ctx, {
@@ -190,14 +192,23 @@ const progressOf = page => page.evaluate(() => {
              storyCleared: [true, true, true, true, true, false],
              reconstructedFacts: { 'EVAC_RECEPTION.E442.resident_id': 'R005' } }) });
       await p2.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await startFresh(p2);   // スタート画面で「はじめから」→「消して始める」
       await p2.waitForSelector('#tokenPad .tok', { timeout: 30000 }).catch(() => {});
       const reset = await progressOf(p2);
-      check('[C] NEW GAME（再開しない）で reconstructedFacts が残らない',
-        !!reset && (!reset.reconstructedFacts || Object.keys(reset.reconstructedFacts).length === 0),
-        JSON.stringify(reset && reset.reconstructedFacts));
+      // 「はじめから」は保存そのものを消す。まだ書き戻されていない（reset === null）のも正常。
+      check('[C] NEW GAME（消して始める）で reconstructedFacts が残らない',
+        !reset || !reset.reconstructedFacts || Object.keys(reset.reconstructedFacts).length === 0,
+        reset === null ? '保存そのものが消えている' : JSON.stringify(reset.reconstructedFacts));
       check('[C] NEW GAME で xp / cleared もリセットされる',
-        !!reset && reset.xp === 0 && reset.cleared.every(c => c === false),
-        JSON.stringify(reset && { xp: reset.xp, cleared: reset.cleared }));
+        !reset || (reset.xp === 0 && reset.cleared.every(c => c === false)),
+        reset === null ? '保存そのものが消えている' : JSON.stringify({ xp: reset.xp, cleared: reset.cleared }));
+      // 学習側の保存も消えていること（本編だけ消して学習が残ると、続きが矛盾する）
+      const learningLeft = await p2.evaluate(() => {
+        try { return JSON.parse(localStorage.getItem('neon_relay_campaign_v2') || 'null'); } catch(e){ return null; }
+      });
+      check('[C] NEW GAME で学習ミッションの完了も消える',
+        !learningLeft || Object.keys(learningLeft.completed || {}).length === 0,
+        JSON.stringify(learningLeft && Object.keys(learningLeft.completed || {}).length));
       await ctx2.close();
     }
 

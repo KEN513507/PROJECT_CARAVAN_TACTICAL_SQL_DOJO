@@ -1,14 +1,16 @@
 // js/app.js
 import { SoundEngine } from './sound.js?v=20260915-sprint2';
-import { BgmEngine } from './bgm.js?v=20260915-sprint2';
-import { TABLES, STAGES as STORY_STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL } from './data.js?v=20260918-ch6-investigation';
+import { BgmEngine } from './bgm.js?v=20260929-crossfade';
+import { Shell } from './shell.js?v=20260929-shell';
+import { TABLES, STAGES as STORY_STAGES, SKILL_LABELS, EXAM_QUESTIONS, EPILOGUE, OPENING, TUTORIAL, AYA_REVEAL } from './data.js?v=20260930-aya';
+import { AYA_UNLOCK_CHAPTER } from './story-cg.js?v=20260930-cg';
 import { judgeByResult } from './sql-engine.js?v=20260917-fe-rtp';
 import { getRelationTask, buildRelationTables, RelationTaskSession, RelationPhase, evaluateRelation,
   applyReconstructedFacts } from './relation-task.js?v=20260918-ch6-investigation';
 import { UIManager } from './ui.js?v=20260919-onboarding';
 import { ChapterSession, Phase } from './chapter-session.js?v=20260919-onboarding';
 
-import { ONBOARDING_STAGES, ONBOARDING_TABLES } from './onboarding.js';
+import { LEARNING_STAGES as ONBOARDING_STAGES, LEARNING_TABLES as ONBOARDING_TABLES } from './campaign.js?v=20260928-missions';
 import { learningActions } from './learning-actions.js';
 
 // ---- CANONICAL CAMPAIGN ----
@@ -40,6 +42,8 @@ const MUTE_KEY = 'caravan_muted';
 const INTRO_KEY = 'caravan_intro_seen';
 const TUTORIAL_KEY = 'caravan_tutorial_seen';
 const MISSION_VISIBLE_KEY = 'neon_relay_mission_visible';
+const LEARNING_KEY = 'neon_relay_campaign_v2';   // js/learning-actions.js の STORAGE_KEY と同じ
+const BGM_VOLUME_KEY = 'neon_relay_bgm_volume';
 const ROW_PREDICTION_MIN_SAMPLE = 8;
 
 // ---- DEBUG: ステージセレクタで全章を選択可能にする ----
@@ -182,6 +186,19 @@ function buildCertificateText(report){
   return lines.join('\n');
 }
 
+// 成功画面の振り返りに出す表。照会に使った表だけを残す。
+// CH1〜CH3 には読めるだけの伏線表(ARCHIVE_SYNC_LOG)が並んでいるが、
+// 解答SQLが触っていないので振り返りには出さない。
+// どれも一致しない章（Relation Task 等）は元の並びをそのまま返す。
+function recapTables(st){
+  const specs = st.tables || [];
+  const sql = String((st.answers && st.answers[0]) || '').toUpperCase();
+  if(!sql) return specs;
+  const words = new Set(sql.split(/[^A-Z0-9_]+/));
+  const used = specs.filter(spec => words.has(String(typeof spec === 'string' ? spec : spec.name).toUpperCase()));
+  return used.length ? used : specs;
+}
+
 class App {
   constructor(){
     this.stage = 0;
@@ -207,6 +224,13 @@ class App {
     this.bgmResumeTimer = null;
     try { this.muted = localStorage.getItem(MUTE_KEY) === 'true'; }
     catch(e){ this.muted = false; }
+    try {
+      // 未保存のときは null。Number(null) は 0 になるので、必ず文字列の有無から見る。
+      const raw = localStorage.getItem(BGM_VOLUME_KEY);
+      const v = raw === null ? NaN : Number(raw);
+      if(Number.isFinite(v) && v >= 0 && v <= 1) bgm.volume = v;
+    } catch(e){}
+    this.playing = false;   // シェルが PLAY へ移すまで遊びは始まっていない
     const unlockBgm = event => {
       if(bgm.unlocked) return;
       bgm.unlock();
@@ -259,12 +283,35 @@ class App {
     this.muteBtn.id = 'muteBtn';
     this.muteBtn.addEventListener('click', () => this.toggleMute());
     document.getElementById('hud').appendChild(this.muteBtn);
+
+    // プレイ中から設定を開く入口。どこへ行けるかは遷移表(js/shell-state.js)が決める。
+    this.settingsBtn = document.createElement('button');
+    this.settingsBtn.type = 'button';
+    this.settingsBtn.id = 'settingsBtn';
+    this.settingsBtn.textContent = '⚙';
+    this.settingsBtn.setAttribute('aria-label', '設定を開く');
+    this.settingsBtn.title = '設定';
+    this.settingsBtn.addEventListener('click', () => { sound.tap(); this.shell?.send('OPEN_SETTINGS'); });
+    document.getElementById('hud').appendChild(this.settingsBtn);
+    this.sound = sound;   // 学習ミッション側(learning-actions)からも鳴らせるようにする
     this.applyMuteState();
 
-    this.resumeFromProgress();
-    if(isLearningStage(this.stage)) this.boot();
-    else this.showCivisBoot(() => this.boot());
-    window.addEventListener('pagehide', () => this.saveProgress());
+    // SHELL: スタート画面 / 設定 / 上書き確認。遷移の規則は js/shell-state.js が持つ。
+    // ここは「頼まれた仕事をやる係」だけを渡す。どこへ行くかは決めない。
+    this.shell = new Shell(document.getElementById('shell'), {
+      hasSave:     () => this.hasSave(),
+      saveSummary: () => this.saveSummary(),
+      wipe:        () => this.wipeSave(),
+      start:       () => this.startNewGame(),
+      resume:      () => this.continueGame(),
+      leave:       () => this.quitToTitle(),
+      settings: {
+        read:  ()          => this.readSettings(),
+        write: (key, value) => this.writeSetting(key, value)
+      }
+    });
+    this.shell.begin();
+    window.addEventListener('pagehide', () => { if(this.playing) this.saveProgress(); });
 
     // ---- UX Decoder (A/B) 専用テストフック。本番では window.__NEON_TEST_CONFIG__ が
     // 存在しないため一切有効化されない。ChapterSessionには触れず、Appの外側からのみ操作する。
@@ -321,6 +368,113 @@ class App {
       this.saveProgress();
     });
   }
+
+  // ============================================================
+  // SHELL の依頼を実行する係。判断はしない（判断は js/shell-state.js）。
+  // ============================================================
+
+  // 続きがあるか。学習ミッションの完了か、本編の進捗があれば「ある」。
+  hasSave(){
+    const saved = this.loadProgressRaw();
+    if(saved && (saved.stage > 0 || saved.xp > 0 || saved.cleared.some(Boolean))) return true;
+    try {
+      const learning = JSON.parse(localStorage.getItem(LEARNING_KEY) || 'null');
+      // 書きかけの下書きも「続き」。1つでもトークンを置いたら戻ってこられる。
+      return !!learning && (learning.stage > 0
+        || Object.keys(learning.completed || {}).length > 0
+        || Object.keys(learning.drafts || {}).length > 0);
+    } catch(e){ return false; }
+  }
+
+  // 続きの場所を一言で。スタート画面の「つづきから」に添える。
+  saveSummary(){
+    const saved = this.loadProgressRaw();
+    let stage = saved?.stage ?? 0;
+    if(!stage){
+      try { stage = JSON.parse(localStorage.getItem(LEARNING_KEY) || 'null')?.stage ?? 0; } catch(e){}
+    }
+    stage = Math.max(0, Math.min(stage, STAGES.length - 1));
+    return isLearningStage(stage)
+      ? (STAGES[stage].level || `MISSION ${stage + 1}`)
+      : `CHAPTER ${stage - STORY_OFFSET + 1}`;
+  }
+
+  // 進捗だけを消す。設定（音・問題文の表示）は残す。
+  wipeSave(){
+    for(const key of [PROGRESS_KEY, LEARNING_KEY, INTRO_KEY, TUTORIAL_KEY]){
+      try { localStorage.removeItem(key); } catch(e){}
+    }
+    this.xp = 0;
+    this.stage = 0;
+    this.cleared = new Array(STAGES.length).fill(false);
+    this.clearTypes = new Array(STAGES.length).fill(null);
+    this.reconstructedFacts = {};
+    this.learningDrafts = {};
+    this.learningCompleted = {};
+  }
+
+  // 最初から始める。
+  startNewGame(){
+    this.playing = true;
+    this.showCivisBoot(() => this.boot());
+  }
+
+  // 保存から再開する。
+  continueGame(){
+    this.playing = true;
+    this.adoptSave();
+    if(isLearningStage(this.stage)) this.boot();
+    else this.showCivisBoot(() => this.boot());
+  }
+
+  // 遊びを畳んでタイトルへ戻る。進捗は保存してから閉じる。
+  quitToTitle(){
+    this.saveProgress();
+    this.playing = false;
+    this.stopTimer();
+    this.ui.hideStoryOverlay();
+    this.ui.closeDrawer();
+    this.ui.closeStageDrawer();
+    this.ui.hideSuccess();
+    this.ui.hideTutor();
+    this.ui.setProtagonist('hidden');
+    bgm.stop();
+    document.body.classList.remove('learning-ui');
+    this.ui.setCh1Layout(false);
+  }
+
+  // ---- 設定 ----
+  readSettings(){
+    return {
+      sound: !this.muted,
+      bgmVolume: Math.round(bgm.volume * 100),
+      missionVisible: this.missionVisible()
+    };
+  }
+
+  writeSetting(key, value){
+    if(key === 'sound'){
+      this.muted = !value;
+      this.applyMuteState();
+      if(!this.muted){ sound.init(); if(bgm.unlocked && !bgm.current) bgm.play(this.bgmTrack); }
+      try { localStorage.setItem(MUTE_KEY, String(this.muted)); } catch(e){}
+    } else if(key === 'bgmVolume'){
+      bgm.volume = Math.max(0, Math.min(1, Number(value) / 100));
+      if(bgm.current && bgm.deck) bgm.play(bgm.currentName, bgm.deck.loop, bgm.volume);
+      try { localStorage.setItem(BGM_VOLUME_KEY, String(bgm.volume)); } catch(e){}
+    } else if(key === 'missionVisible'){
+      try { localStorage.setItem(MISSION_VISIBLE_KEY, String(!!value)); } catch(e){}
+      this.ui.setMissionVisible(!!value);
+    }
+  }
+
+  // ============================================================
+  // STORY CG CONTRACT: 如月アヤの解禁フラグ。
+  // CH4 の INNER JOIN を通すまで、CGは描画もロードもしない。
+  // 判断はここ（進捗を持っている側）で行い、UIへは真偽だけを渡す。
+  // ============================================================
+  ayaUnlocked(){ return this.cleared[STORY_OFFSET + AYA_UNLOCK_CHAPTER] === true; }
+  syncCgUnlock(){ this.ui.setCgUnlocked(this.ayaUnlocked()); }
 
   // ---- CIVIS FIELD CONSOLE 演出 (起動時1.5秒) ----
   showCivisBoot(cb){
@@ -465,42 +619,31 @@ class App {
       // iOS Safari プライベートモード等で保存できなくてもゲームは継続する
     }
   }
-  resumeFromProgress(){
+  adoptSave(){
     // まず学習章の完了状況を復元し（cleared[0..11] が埋まる）、
     // そのうえで campaign 進捗が本編まで進んでいれば、そちらを採用する。
     this.restoreLearning();
     const saved = this.loadProgressRaw();
     if(!saved) return;
-    if(saved.stage >= STORY_OFFSET) return this.resumeStoryProgress(saved);
+    if(saved.stage >= STORY_OFFSET) return this.adoptStoryProgress(saved);
     return;
   }
 
   // 本編（CHAPTER 1〜6）まで到達済みの進捗を復元する。
-  resumeStoryProgress(saved){
+  adoptStoryProgress(saved){
     const hasProgress = saved.stage > 0 || saved.xp > 0 || saved.cleared.some(Boolean);
     const fullyCleared = saved.cleared.length === STAGES.length && saved.cleared.every(Boolean);
     if(!hasProgress || fullyCleared) return;
 
-    let resume = false;
-    try{ resume = window.confirm(`前回の続き（CHAPTER ${saved.stage - STORY_OFFSET + 1}）から再開しますか？`); }catch(e){ resume = false; }
-
-    if(resume){
-      this.xp = saved.xp;
-      this.stage = Math.min(saved.stage, STAGES.length - 1);
-      // 学習章のclearedは restoreLearning() が埋めた値を保持し、長さ違いの古い保存では潰さない
-      if(saved.cleared.length === STAGES.length) this.cleared = saved.cleared;
-      this.clearTypes = Array.isArray(saved.clearTypes) && saved.clearTypes.length === STAGES.length
-        ? saved.clearTypes : new Array(STAGES.length).fill(null);
-      this.reconstructedFacts = (saved.reconstructedFacts && typeof saved.reconstructedFacts === 'object')
-        ? saved.reconstructedFacts : {};
-    } else {
-      this.xp = 0;
-      this.stage = 0;
-      this.cleared = new Array(STAGES.length).fill(false);
-      this.clearTypes = new Array(STAGES.length).fill(null);
-      this.reconstructedFacts = {};
-      this.saveProgress();
-    }
+    // 再開するかどうかはスタート画面で既に選ばれている。ここでは黙って採用する。
+    this.xp = saved.xp;
+    this.stage = Math.min(saved.stage, STAGES.length - 1);
+    // 学習章のclearedは restoreLearning() が埋めた値を保持し、長さ違いの古い保存では潰さない
+    if(saved.cleared.length === STAGES.length) this.cleared = saved.cleared;
+    this.clearTypes = Array.isArray(saved.clearTypes) && saved.clearTypes.length === STAGES.length
+      ? saved.clearTypes : new Array(STAGES.length).fill(null);
+    this.reconstructedFacts = (saved.reconstructedFacts && typeof saved.reconstructedFacts === 'object')
+      ? saved.reconstructedFacts : {};
   }
 
   computeEnabled(){
@@ -825,7 +968,9 @@ class App {
       // 2表・3表問題でも全source tableをZONE 1へ収める
       // ZONE 1 は「結果がRaw Dataと整合するか」を検証する場所なので、
       // Query画面と同じ表・同じ列の見え方を渡す（SQL WORKSPACE VISIBILITY CONTRACT §8）。
-      tables: (st.tables || []).map(spec => {
+      // ただし振り返りに出すのは「照会に使った表」だけ。読めるだけの伏線表は入れない
+      // （ZONE 1 は結果とRaw Dataの整合を確かめる場所なので、無関係な表を混ぜない）。
+      tables: recapTables(st).map(spec => {
         const name = typeof spec === 'string' ? spec : spec.name;
         const tb = this.queryTables()[name];
         if(!tb) return { name, cols: [], rows: [], keys: [] };
@@ -1086,6 +1231,7 @@ ${st.note || ''}`.trim();
     this.ui.hidePredictBar();
     this.ui.enableAfterTimeout();
     this.ui.setProtagonist('hidden');
+    this.ui.hideTutor();
     this.ui.setMission(task.level, task.prompt);
     this.ui.renderSchema([]);
     this.ui.renderTokens([]);
@@ -1321,12 +1467,16 @@ ${st.note || ''}`.trim();
     // 章を切り替えた直後、観測値が前の章のphaseのまま残らないようにする
     // （学習章 M12 の CHAPTER_CLEARED を本編CH1が引き継いでしまう経路があった）
     document.body.dataset.phase = this.session.phase;
+    // FOCUS CONTRACT: 本編も表から始める（まずデータを読む）
+    this.ui.setFocus('source');
     this.assistLevel = 0;
     this.solved = false;
     this.predicted = null;
     this.timedOut = false;
     this.rowPredictionRecorded = false;
     this.ui.setProtagonist(isStoryCh1(this.stage) ? 'idle' : 'hidden');
+    this.syncCgUnlock();   // STORY CG CONTRACT: 進捗が変わるたびに解禁状態を渡し直す
+    this.ui.hideTutor();   // CHARACTER ART CONTRACT: 立ち絵は学習ミッション専用
     this.ui.closeSheet();
     this.ui.setCh1Layout(isStoryCh1(this.stage));
     if(isStoryCh1(this.stage)){
@@ -1369,15 +1519,30 @@ ${st.note || ''}`.trim();
   next(){
     if(this.stage < STAGES.length - 1){
       const wasCh1 = isStoryCh1(this.stage);
+      // CH4 を通した直後だけ、如月アヤが姿を見せる解禁シーンを挟む。
+      const wasAyaChapter = this.stage === STORY_OFFSET + AYA_UNLOCK_CHAPTER;
       this.stage++;
       if(wasCh1) this.showAuditLog(() => this.load());
+      else if(wasAyaChapter) this.showAyaReveal(() => this.load());
       else this.load();
     }
     else this.showEpilogue();
   }
 
+  // STORY CG CONTRACT: ここが如月アヤの初出。解禁フラグを立ててから開く。
+  showAyaReveal(done){
+    this.syncCgUnlock();
+    this.setBgm('transmission');
+    sound.tap();
+    this.ui.showStoryOverlay(AYA_REVEAL, () => {
+      this.ui.hideStoryOverlay();
+      done();
+    }, '▶ 記録を持って次へ');
+  }
+
   showEpilogue(){
-    this.setBgm('title');
+    this.syncCgUnlock();   // 終盤のCGも同じ関門を通す
+        this.setBgm('title');
     sound.tap();
     this.ui.showStoryOverlay(EPILOGUE, () => {
       this.ui.hideStoryOverlay();

@@ -1,0 +1,90 @@
+{
+  "_": "立ち絵の切り抜きの SSOT。真実は「元のPNG + ここに書いた引数 + tools/cutout-character.mjs のアルゴリズム」であって、出力された webp ではない。出力は常にここから作り直せる。tools/cutout-repro-check.mjs が毎回それを確かめる。",
+  "version": 1,
+  "algorithm": "edge-flood-alpha",
+  "algorithmNote": "コマの縁からつながっている背景色の領域だけを塗りつぶし、背景色からの距離で不透明度を決め、despill が真なら緑かぶりを落とし、不透明度だけを半径 blur でぼかす。人物の内側は縁とつながらないため、暗部でも穴が開かない。",
+  "outputs": [
+    {
+      "src": "assets/characters/tutor.png",
+      "out": "assets/characters/tutor-sheet.webp",
+      "grid": "2x2",
+      "size": "768x768",
+      "lo": 12,
+      "hi": 46,
+      "blur": 1,
+      "q": 88,
+      "despill": false
+    },
+    {
+      "src": "assets/characters/protagonist.png",
+      "out": "assets/characters/protagonist-sheet.webp",
+      "grid": "2x2",
+      "size": "768x1152",
+      "lo": 12,
+      "hi": 46,
+      "blur": 1,
+      "q": 70,
+      "despill": false
+    },
+    {
+      "src": "assets/characters/aya-green.png",
+      "out": "assets/characters/aya-sheet.webp",
+      "grid": "2x2",
+      "size": "768x768",
+      "lo": 90,
+      "hi": 230,
+      "blur": 1,
+      "despill": true,
+      "q": 80,
+      "note": "グリーンバック素材。背景が人物から遠いので lo/hi を大きく取り、縁の緑かぶりを despill で落とす。"
+    },
+    {
+      "src": "assets/characters/aya-cg-strain.png",
+      "out": "assets/characters/aya-cg-strain.webp",
+      "grid": "1x1",
+      "size": "768x1024",
+      "lo": 90,
+      "hi": 230,
+      "blur": 1,
+      "despill": true,
+      "q": 80,
+      "note": "イベントCG（1枚絵）。グリーンバック。頭を抱えて座り込む。苦悩・消耗。"
+    },
+    {
+      "src": "assets/characters/aya-cg-defiance.png",
+      "out": "assets/characters/aya-cg-defiance.webp",
+      "grid": "1x1",
+      "size": "768x1024",
+      "lo": 90,
+      "hi": 230,
+      "blur": 1,
+      "despill": true,
+      "q": 80,
+      "note": "イベントCG（1枚絵）。グリーンバック。拳を握り正面を睨む。決意・抗い。"
+    },
+    {
+      "src": "assets/characters/aya-cg-withdraw.png",
+      "out": "assets/characters/aya-cg-withdraw.webp",
+      "grid": "1x1",
+      "size": "768x1024",
+      "lo": 90,
+      "hi": 230,
+      "blur": 1,
+      "despill": true,
+      "q": 80,
+      "note": "イベントCG（1枚絵）。グリーンバック。膝を抱えて俯き目を閉じる。沈黙・受容。"
+    },
+    {
+      "src": "assets/characters/aya-cg-appeal.png",
+      "out": "assets/characters/aya-cg-appeal.webp",
+      "grid": "1x1",
+      "size": "768x1024",
+      "lo": 90,
+      "hi": 230,
+      "blur": 1,
+      "despill": true,
+      "q": 80,
+      "note": "イベントCG（1枚絵）。グリーンバック。こちらへ手を差し伸べる。訴え・呼びかけ。"
+    }
+  ]
+}

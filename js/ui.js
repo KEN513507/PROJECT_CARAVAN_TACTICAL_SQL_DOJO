@@ -1,6 +1,8 @@
 // js/ui.js
 import { TABLES } from './data.js?v=20260918-ch6-investigation';
 import { fieldLabel, tableLabel } from './display-labels.js?v=20260919-onboarding';
+import { Tutor } from './tutor.js?v=20260930-link';
+import { STORY_CG, cgAllowed } from './story-cg.js?v=20260930-cg';
 
 const $ = id => document.getElementById(id);
 
@@ -24,6 +26,11 @@ export class UIManager {
     this.h = handlers;
     this.el = { app: $('app') };
     this._build();
+    // CHARACTER ART CONTRACT: js/tutor.js を参照
+    this.tutor = new Tutor($('tutor'));
+    // STORY CG CONTRACT: 解禁前は CG を描画も読み込みもしない。
+    // 既定は false。app.js が進捗から setCgUnlocked() で渡す。
+    this.cgUnlocked = false;
   }
 
   _build(){
@@ -198,16 +205,23 @@ export class UIManager {
     // 表が小さいときの最初のタップは「見るため」。拡大だけして、SQLには何も入れない。
     // 2回目以降のタップで初めて列・値が挿入される（表だけ見たい操作を潰さないため）。
     this.el.schemaPanel.addEventListener('click', e => {
-      if(!document.body.classList.contains('learning-ui')) return;
+      if(document.body.dataset.workspace === 'success') return;   // 成功画面では切り替えない
       if(document.body.dataset.focus !== 'source'){
         this.setFocus('source');
         e.stopPropagation();
         e.preventDefault();
       }
     }, true);
-    this.el.monitor.parentElement.addEventListener('click', () => {
-      if(document.body.classList.contains('learning-ui')) this.setFocus('query');
-    });
+    // SQL欄も表と同じ規則。小さいときの最初のタップは「見るため」で、
+    // 拡大だけして語の選択（カーソル移動）は起こさない。
+    this.el.monitor.parentElement.addEventListener('click', e => {
+      if(document.body.dataset.workspace === 'success') return;   // 成功画面では切り替えない
+      if(document.body.dataset.focus !== 'query'){
+        this.setFocus('query');
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
     this.el.utilBar.addEventListener('click', e => {
       this.setFocus('query');
       const b = e.target.closest('.util'); if(!b) return;
@@ -346,6 +360,8 @@ export class UIManager {
   setFocus(area){
     if(document.body.dataset.focus === area) return;
     document.body.dataset.focus = area;
+    // CHARACTER ART CONTRACT: SQL欄を操作しはじめたら立ち絵は退場する。
+    if(area === 'query') this.tutor?.onEdit();
   }
 
   // 案内文は常時表示しない。同じ文言はヒントの1段目から出せる（全ミッション共通）。
@@ -484,8 +500,14 @@ export class UIManager {
   showHint(text, label = '完成SQL'){
     this.el.hintLine.textContent = '💡 ' + label + ' : ' + text;
     this.el.hintLine.classList.add('show');
+    // ヒントを開いている間は、ヒント自身が主役になる（SQL欄の高さ制限に潰されない）
+    document.body.classList.add('hint-open');
   }
-  hideHint(){ this.el.hintLine.classList.remove('show'); this.el.hintLine.textContent = ''; }
+  hideHint(){
+    this.el.hintLine.classList.remove('show');
+    this.el.hintLine.textContent = '';
+    document.body.classList.remove('hint-open');
+  }
   isHintVisible(){ return this.el.hintLine.classList.contains('show'); }
 
   // ---- チュートリアル (CHAPTER 1 初回のみ・NORAの案内) ----
@@ -520,6 +542,14 @@ export class UIManager {
     el.setAttribute('data-mood', mood);
     el.classList.add('show');
   }
+
+  // ---- 立ち絵 (CHARACTER ART CONTRACT / js/tutor.js) ----
+  // 出すのは 問題冒頭 / ヒント / クリア画面 の3瞬間だけ。
+  showTutor(moment){ this.tutor.show(moment); }
+  hideTutor(){ this.tutor.hide(); }
+  // SQLを編集する操作が起きたら立ち絵を退場させる。
+  tutorOnEdit(){ this.tutor.onEdit(); }
+  isTutorVisible(){ return this.tutor.visible; }
 
   // ---- CH1正解後の沈黙演出用: 実行ボタンの一時無効化 ----
   setRunDisabled(disabled){ this.el.runBtn.disabled = disabled; }
@@ -845,8 +875,13 @@ export class UIManager {
       : `<div class="alt-none">同じ結果になる書き方なら、この形でなくても正解。</div>`;
     this.el.zoneResultBody.innerHTML =
       `<div class="zone-label">EXECUTED SQL</div><div class="zone-sql">${esc(view.executedSql)}</div>` +
-      `<div class="zone-label">RESULT</div>` +
-      `<table class="zone-grid result"><thead><tr>${rHead}</tr></thead><tbody>${rBody}</tbody></table>` +
+      (view.orderedBefore
+        ? `<div class="zone-label">並べ替える前</div>` +
+          `<table class="zone-grid before"><thead><tr>${rHead}</tr></thead><tbody>` +
+          view.orderedBefore.map(r => '<tr>' + r.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('') +
+          `</tbody></table><div class="order-arrow">↓ ${esc(view.orderedLabel || '並べ替えた後')}</div>`
+        : `<div class="zone-label">RESULT</div>`) +
+      `<table class="zone-grid result${view.orderedBefore ? ' after' : ''}"><thead><tr>${rHead}</tr></thead><tbody>${rBody}</tbody></table>` +
       alts +
       `<div class="zone-clear ${esc(view.clearType.toLowerCase())}">` +
         `<span class="zone-clear-type">${esc(view.clearLabel || view.clearType)}</span>` +
@@ -941,6 +976,7 @@ export class UIManager {
       if(b.type === 'heading') return `<div class="story-heading">${esc(b.text)}</div>`;
       if(b.type === 'dialogue') return `<div class="story-dialogue">${esc(b.text).replace(/\n/g,'<br>')}</div>`;
       if(b.type === 'terminal') return `<div class="story-terminal">${b.lines.map(l => `<div>&gt; ${esc(l)}</div>`).join('')}</div>`;
+      if(b.type === 'cg') return this.cgBlock(b);
       if(b.type === 'sql') return `<pre class="story-sql">${esc(b.text)}</pre>`;
       if(b.type === 'note') return `<div class="story-note">⚠ ${esc(b.text)}</div>`;
       return `<div class="story-narration">${esc(b.text)}</div>`;
@@ -948,7 +984,41 @@ export class UIManager {
     this.el.storyOverlay.classList.add('show');
     const scrollEl = $('storyOverlayScroll');
     if(scrollEl) scrollEl.scrollTop = 0;
+    this._revealCgOnScroll();
   }
+  // STORY CG CONTRACT: 解禁済みかどうかを受け取る。判断は app.js（進捗）が持つ。
+  setCgUnlocked(unlocked){ this.cgUnlocked = !!unlocked; }
+
+  // イベントCG。ノベルゲーム風に、静かにフェードインして台詞を重ねる。
+  // 解禁前は空文字を返す。URLもDOMも作らないので、読み込みも発生しない。
+  cgBlock(b){
+    if(!cgAllowed(b.art, this.cgUnlocked)) return '';
+    const cg = STORY_CG[b.art];
+    return `<figure class="story-cg" data-cg="${esc(b.art)}">
+        <div class="story-cg-art" role="img" aria-label="${esc(cg.alt)}"
+             style="background-image:url('${cg.file}')"></div>
+        ${b.text ? `<figcaption class="story-cg-line">${esc(b.text).replace(/\n/g, '<br>')}</figcaption>` : ''}
+      </figure>`;
+  }
+
+  // 画面に入ったところで静かに立ち上げる（読み込み済みでも、出方は落ち着かせる）
+  _revealCgOnScroll(){
+    const items = [...this.el.storyOverlayBody.querySelectorAll('.story-cg')];
+    if(!items.length) return;
+    if(typeof IntersectionObserver !== 'function'){
+      items.forEach(el => el.classList.add('in'));
+      return;
+    }
+    const io = new IntersectionObserver(entries => {
+      for(const e of entries){
+        if(!e.isIntersecting) continue;
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    }, { threshold: 0.25 });
+    items.forEach(el => io.observe(el));
+  }
+
   hideStoryOverlay(){
     this.el.storyOverlay.classList.remove('show');
   }

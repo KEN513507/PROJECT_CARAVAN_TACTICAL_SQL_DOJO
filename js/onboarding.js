@@ -1,8 +1,10 @@
 // Canonical campaign opening. Data and token editing only; execution stays in sql-engine.js.
 export const ONBOARDING_TABLES = {
-  STOCK: { cols: ['item', 'shelf', 'quantity'], keys: [], rows: [
-    ['鉛筆', 'A', 12], ['消しゴム', 'A', 3], ['定規', 'A', 5],
-    ['鉛筆', 'B', 4], ['消しゴム', 'B', 8], ['定規', 'B', 2]
+  // unit は照会に使わない列。SELECT で「表の一部だけを取り出している」ことが
+  // 結果を見て分かるようにするために置いている（表＝結果 になる問題を作らない）。
+  STOCK: { cols: ['item', 'shelf', 'quantity', 'unit'], keys: [], rows: [
+    ['鉛筆', 'A', 12, '本'], ['消しゴム', 'A', 3, '個'], ['定規', 'A', 5, '本'],
+    ['鉛筆', 'B', 4, '本'], ['消しゴム', 'B', 8, '個'], ['定規', 'B', 2, '本']
   ] },
   REQUESTS: { cols: ['item', 'desk', 'quantity'], keys: [], rows: [
     ['鉛筆', '受付', 3], ['消しゴム', '受付', 2], ['鉛筆', '倉庫', 5],
@@ -11,14 +13,14 @@ export const ONBOARDING_TABLES = {
 };
 
 export function queryTokens(sql) {
-  return (sql.match(/'(?:''|[^'])*'|(?:COUNT|SUM)\s*\([^)]*\)|GROUP BY|ORDER BY|[A-Za-z_][A-Za-z_0-9]*|\d+|<>|<=|>=|[=<>*,;□]/gi) || [])
+  return (sql.match(/'(?:''|[^'])*'|(?:COUNT|SUM|AVG|MAX|MIN)\s*\([^)]*\)|GROUP BY|ORDER BY|INNER JOIN|LEFT JOIN|RIGHT JOIN|IS NOT NULL|IS NULL|NOT LIKE|NOT BETWEEN|NOT IN|[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)?|\d+|<>|<=|>=|[=<>*,;()□]/gi) || [])
     .filter(t => t !== ';').map(t => ({ t, k: tokenKind(t) }));
 }
 export function tokenKind(t) {
   if (t === '□') return 'slot';
-  if (t === ',') return 'punct';
-  if (/^(SELECT|FROM|WHERE|AND|OR|ORDER BY|GROUP BY|ASC|DESC|AS)$/i.test(t)) return 'clause';
-  if (/^(COUNT|SUM)\(/i.test(t)) return 'func';
+  if (t === ',' || t === '(' || t === ')') return 'punct';
+  if (/^(SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IN|NOT IN|LIKE|NOT LIKE|BETWEEN|NOT BETWEEN|IS NULL|IS NOT NULL|ORDER BY|GROUP BY|HAVING|INNER JOIN|LEFT JOIN|RIGHT JOIN|ON|ASC|DESC|AS)$/i.test(t)) return 'clause';
+  if (/^(COUNT|SUM|AVG|MAX|MIN)\(/i.test(t)) return 'func';
   if (t in ONBOARDING_TABLES) return 'table';
   if (/^(=|<|>|<=|>=|<>)$/.test(t)) return 'op';
   if (/^'|^\d/.test(t)) return 'lit';
@@ -48,20 +50,20 @@ export function editQuery(tokens, token, cursor) {
 }
 
 const specs = [
-  ['備品名を取り出す', '備品名だけを表示してください。', 'SELECT item FROM STOCK',
+  ['備品名を取り出す', '棚ごとの備品名を表示してください。', 'SELECT item FROM STOCK',
     ['item'], ONBOARDING_TABLES.STOCK.rows.map(r => [r[0]]),
     '表の「品目」をタップすると、選んだ列をSQLに入れられます。', 'SELECT □ FROM STOCK'],
   ['列を増やす', '品目・棚・数量を一緒に表示してください。', 'SELECT item, shelf, quantity FROM STOCK',
-    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows,
+    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.map(r => r.slice(0, 3)),
     'SQLの品目の後ろに追加位置を選び、棚と数量を追加します。カンマは自動で入ります。'],
   ['B棚を見る', 'B棚の備品だけを表示してください。', "SELECT item, shelf, quantity FROM STOCK WHERE shelf = 'B'",
-    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[1] === 'B'),
+    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[1] === 'B').map(r => r.slice(0, 3)),
     '末尾にWHEREを追加して、棚がBと一致する条件を作ります。'],
   ['少ない在庫を探す', '棚に関係なく、数量が6未満の備品を表示してください。', 'SELECT item, shelf, quantity FROM STOCK WHERE quantity < 6',
-    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[2] < 6),
+    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[2] < 6).map(r => r.slice(0, 3)),
     '前回の条件を編集します。棚を数量に、＝を＜に、Bを6に置き換えます。'],
   ['二つの条件で探す', 'B棚で、数量が6未満の備品を表示してください。', "SELECT item, shelf, quantity FROM STOCK WHERE quantity < 6 AND shelf = 'B'",
-    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[1] === 'B' && r[2] < 6),
+    ['item', 'shelf', 'quantity'], ONBOARDING_TABLES.STOCK.rows.filter(r => r[1] === 'B' && r[2] < 6).map(r => r.slice(0, 3)),
     '数量の条件を残し、ANDで「棚がB」を追加します。'],
   ['少ない順に並べる', 'そのB棚の備品を、数量の少ない順に並べてください。', "SELECT item, shelf, quantity FROM STOCK WHERE quantity < 6 AND shelf = 'B' ORDER BY quantity",
     ['item', 'shelf', 'quantity'], [['定規', 'B', 2], ['鉛筆', 'B', 4]],
@@ -82,6 +84,15 @@ const specs = [
     ['item', 'request_total'], [['鉛筆', 12], ['消しゴム', 5], ['定規', 1]],
     '鉛筆だけのWHERE条件を削除し、GROUP BYで品目ごとのまとまりを作ります。SELECTにも品目を追加します。']
 ];
+// 正解に必要な語を優先し、上限16個に収める。
+function limitTokens(need, pool){
+  const out = [];
+  for(const w of [...need, ...pool]){
+    if(w !== ',' && !out.includes(w)) out.push(w);
+  }
+  return out.slice(0, 16).map(t => ({ t, k: tokenKind(t) }));
+}
+
 const concepts = ['列の選択', '複数列の選択', '文字列の一致', '数値の比較', 'AND', 'ORDER BY', '業務表への転用', 'OR', 'COUNT', 'SUM', 'AS', 'GROUP BY'];
 export const ONBOARDING_STAGES = specs.map((s, i) => {
   const table = i < 6 ? 'STOCK' : 'REQUESTS';
@@ -107,7 +118,11 @@ export const ONBOARDING_STAGES = specs.map((s, i) => {
     guide: s[5], hint1: s[5], hint2: `必要な操作：${concepts[i]}。表の見出しもタップできます。`,
     skeleton: s[6] || s[2].replace(/SELECT .*? FROM/, 'SELECT □ FROM'),
     answers: [s[2]], resultSet: { cols: s[3], rows: s[4].map(r => [...r]) },
-    ordered: i === 5, starter: s[6], tokens: [...new Set(words)].map(t => ({ t, k: tokenKind(t) })),
+    // トークンは16個まで。正解に必要な語を先に入れ、残りを蓄積語彙から埋める。
+    // （以前は章が進むほど際限なく増え、M12で29個になり探せなくなっていた）
+    ordered: i === 5, starter: s[6],
+    tokens: limitTokens(queryTokens(s[2]).map(t => t.t), words),
     reveal: { text: i === 11 ? '備品ごとの補充数量を確認できました。今回の12件の作業は完了です。' : '照会結果を作業記録に保存しました。' }
   };
 });
+

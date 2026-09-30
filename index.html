@@ -7,13 +7,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+JP:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260920-focus2" />
+<link rel="stylesheet" href="css/style.css?v=20260930-link" />
 </head>
 <body>
 <div id="civisBoot"><span>CITY STATUS: NORMAL</span></div>
 <div id="auditLog"><span>AUDIT SCOPE UPDATED<br>AGGREGATION: AVAILABLE</span></div>
 <div id="protagonist" data-mood="idle"></div>
+<div id="tutorStage" aria-hidden="true">
+  <div id="tutor" data-pose="calm"></div>
+  <div id="tutorLink" data-speaker="SELF">
+    <div class="tutor-link-head">
+      <span class="nora-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+          <path d="M7.4 16.6a6.5 6.5 0 0 1 0-9.2" />
+          <path d="M16.6 7.4a6.5 6.5 0 0 1 0 9.2" />
+          <path class="nora-far" d="M4.2 19.8a11 11 0 0 1 0-15.6" />
+          <path class="nora-far" d="M19.8 4.2a11 11 0 0 1 0 15.6" />
+        </svg>
+      </span>
+      <p id="tutorTag"></p>
+    </div>
+    <p id="tutorLine"><span class="tutor-who"></span><span class="tutor-say"></span></p>
+  </div>
+</div>
 <div id="app"></div>
-<script type="module" src="js/app.js?v=20260920-focus2"></script>
+<div id="shell" hidden></div>
+<script type="module" src="js/app.js?v=20260929-story-focus"></script>
 </body>
 </html>

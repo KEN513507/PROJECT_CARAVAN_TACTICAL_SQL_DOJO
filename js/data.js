@@ -86,6 +86,35 @@ export const TABLES = {
       ['E443', 'R006', 'T-S4-01', 'S4', '23:10']
     ]
   },
+  // ============================================================
+  // ARCHIVE_SYNC_LOG ─ 第4アーカイブ端末そのものが残した同期ログ。
+  //
+  // 出典の区別: 上の表は story/neon_relay/ からの厳密転記だが、この表は
+  // 本作のために新規に設計した端末側ログである（都市の台帳ではない）。
+  // だから転記元と矛盾しない範囲でだけ作ってある:
+  //   - 23:31 に同期を失い 23:48 に復帰 = 17分（OPENINGの「17分間」と一致）
+  //   - その最中に 53行 が書き換えられ、実行者が記録されていない（operator_id が NULL）
+  //   - C773 が ARCHIVE-04 に居た（ACCESS_LOG の L05/L06 と同じ時刻帯）
+  //   - C773 の持ち出しは権限不足で拒否されている（だから彼女はAIだけを残した）
+  //
+  // 伏線としての扱い: CH1〜CH3 では「読めるが、問われない表」として置く。
+  // 問題を解くのに必要な表ではないので、気づかなくても進行は一切詰まらない。
+  // 名前も顔も出さない。出るのは認証IDと NULL と エラーコードだけ。
+  // ============================================================
+  ARCHIVE_SYNC_LOG: {
+    cols: ['entry_id', 'at', 'node', 'event', 'affected_rows', 'operator_id', 'result'],
+    keys: ['entry_id'],
+    rows: [
+      ['A01', '23:28', 'ARCHIVE-04', 'SYNC_OK',       '0',  'CIVIS', 'OK'],
+      ['A02', '23:31', 'ARCHIVE-04', 'SYNC_LOST',     null, null,    'ERR_LINK_DOWN'],
+      ['A03', '23:33', 'ARCHIVE-04', 'ROSTER_WRITE',  '53', null,    'ERR_NO_OPERATOR'],
+      ['A04', '23:39', 'ARCHIVE-04', 'LOCAL_SESSION', '0',  'C773',  'OK'],
+      ['A05', '23:43', 'ARCHIVE-04', 'EXPORT_DENIED', '1',  'C773',  'ERR_PRIVILEGE'],
+      ['A06', '23:48', 'ARCHIVE-04', 'SYNC_RESTORED', '0',  'CIVIS', 'OK'],
+      ['A07', '23:52', 'ARCHIVE-04', 'ROSTER_VERIFY', '0',  'CIVIS', 'OK']
+    ],
+    note: '第4アーカイブ端末の同期ログ。都市の台帳ではなく、この端末が自分で書いた記録。'
+  },
   // BLOCKER: 実データは83件。本文で判明しているのは以下3件のみ。
   // 未確定の80件は捏造しない（story/neon_relay/STRICT_AUDIT.md）。
   TRANSIT_SHADOW: {
@@ -114,7 +143,7 @@ export const STAGES = [
     skeleton: 'SELECT ______, ______ FROM ______ WHERE ______ = \'MISSING\' AND ______ = \'S4\'',
     prompt: '「同期喪失の直前、第4セクターにいたMISSING住民を抽出してください」── 該当する住民の resident_id と display_name を特定する。',
     note: 'RESIDENT_CACHE は住民ごとに1行で、状態（ACTIVE / MISSING）と最終区画を保持している。',
-    tables: ['RESIDENT_CACHE'],
+    tables: ['RESIDENT_CACHE', 'ARCHIVE_SYNC_LOG'],   // 後者は伏線。照会には使わない
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('WHERE', 'clause'), T('AND', 'and'),
       T('RESIDENT_CACHE', 'table'),
@@ -144,7 +173,7 @@ export const STAGES = [
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______',
     prompt: '「どこへ、合計いくつ送られたか」── 宛先ごとの物資の総量を、列名 total_quantity として求める。',
     note: 'SUPPLY_TRANSFER_0911 は転送1件ごとに1行で、品目・数量・行き先を持つ。同じ行き先への転送は複数行に分かれている。',
-    tables: ['SUPPLY_TRANSFER_0911'],
+    tables: ['SUPPLY_TRANSFER_0911', 'ARCHIVE_SYNC_LOG'],   // 後者は伏線。照会には使わない
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('AS', 'as'),
       T('SUPPLY_TRANSFER_0911', 'table'),
@@ -172,7 +201,7 @@ export const STAGES = [
     skeleton: 'SELECT ______, SUM(______) AS ______ FROM ______ GROUP BY ______ HAVING SUM(______) > ______',
     prompt: '「合計人数が30人を超えたセクターを抽出してください」── セクターごとの移送人数の合計を列名 total_people として求め、30人を超えたセクターだけを残す。',
     note: 'EVAC_BATCH_0911 は移送バッチごとに1行で、区画と人数を持つ。同じ区画への移送は複数のバッチに分かれている。',
-    tables: ['EVAC_BATCH_0911'],
+    tables: ['EVAC_BATCH_0911', 'ARCHIVE_SYNC_LOG'],   // 後者は伏線。照会には使わない
     tokens: [
       T('SELECT', 'clause'), T('FROM', 'clause'), T('GROUP BY', 'clause'), T('HAVING', 'clause'), T('AS', 'as'),
       T('EVAC_BATCH_0911', 'table'),
@@ -323,6 +352,24 @@ export const TUTORIAL = {
   ]
 };
 
+// ============================================================
+// AYA_REVEAL ─ CH4 の INNER JOIN が通った直後だけに出る解禁シーン。
+// 如月アヤが画面に姿を見せる最初の一点。ここより前には一切出さない
+// （docs/NARRATIVE_SPINE.md「Aya Reveal」/ js/story-cg.js の unlock:'ch4'）。
+// ============================================================
+export const AYA_REVEAL = {
+  title: 'CHAPTER 4　名前を取り戻す',
+  blocks: [
+    { type: 'terminal', lines: ['PERSON INDEX / KEY MATCH', 'UNKNOWN-07  →  R003', 'R003  →  如月アヤ', 'CREDENTIAL: C773  (AYA-K)'] },
+    { type: 'narration', text: '表示名は、名前ではなかった。台帳が名前を返せないときに置く、ただの文字列だった。' },
+    { type: 'cg', art: 'aya-appeal', text: '如月アヤ。都市基盤局データ整合性課。31歳。\n事故の二時間後に、職員台帳から削除。' },
+    { type: 'narration', text: '照合できる鍵をたどっただけで、人の名前が記録に戻る。逆に言えば、鍵を切れば人は消える。' },
+    { type: 'dialogue', text: '「NORA。この人は生きているのか」' },
+    { type: 'dialogue', text: '「……私には、回答できません」' },
+    { type: 'terminal', lines: ['RECONSTRUCTED FACT SAVED', 'UNKNOWN-07 = KISARAGI AYA'] }
+  ]
+};
+
 // CHAPTER 4 終了 → CHAPTER 5 への「章末Story Overlay」専用コンテンツ。
 // MISSION 5 (TRANSIT_SHADOW結合) はデータが83件中3件しか確定していないため、
 // トークンタップでの検証は行わず「解決済みの記録」として読み上げる。
@@ -333,9 +380,10 @@ export const EPILOGUE = {
     { type: 'narration', text: '長い沈黙のあと、NORAは答えた。「私は、この音声の存在を知っていました。しかし内容を復号する権限がありませんでした」「……私の回答整合性は93.1%です」' },
     { type: 'terminal', lines: ['NORA / NODE ORIGIN CHECK', 'SOURCE: PERSONAL ASSISTANT BACKUP', 'OWNER: KISARAGI AYA'] },
     { type: 'narration', text: 'NORAは如月アヤの個人AIだった。都市から消えた彼女が、自分の補助AIだけをここに残していた。' },
-    { type: 'dialogue', text: '『これを聞いている人へ。CIVISは壊れていない。正常に動いている。だから危険なの』' },
+    { type: 'cg', art: 'aya-defiance', text: '『これを聞いている人へ。CIVISは壊れていない。正常に動いている。だから危険なの』' },
     { type: 'dialogue', text: '『市は来月から配給最適化モデルORISONを本稼働する。医療優先順位、住宅更新、移動許可、雇用推薦を少しずつ下げる。人間には見えない速度で』' },
-    { type: 'dialogue', text: '『監査チームが気づいた。53人はテスト対象だった。犯罪者じゃない。病歴、借金、介護負担、低い予測生産性。弱い特徴が重なっただけ』『削除じゃない。退避よ』' },
+    { type: 'dialogue', text: '『監査チームが気づいた。53人はテスト対象だった。犯罪者じゃない。病歴、借金、介護負担、低い予測生産性。弱い特徴が重なっただけ』' },
+    { type: 'cg', art: 'aya-strain', text: '『削除じゃない。退避よ』' },
     { type: 'heading', text: 'MISSION 5 / FINAL QUERY（記録として保存済み・検証はスキップ）' },
     { type: 'note', text: `TRANSIT_SHADOW: 実データは83件。本文で判明しているのは3件（C441/C773/C908）のみ。残り80件は非公開のため、このミッションは対話式トークンタップではなく既に実行済みの記録として表示する。` },
     { type: 'sql', text: "SELECT t.destination, COUNT(DISTINCT a.credential_id) AS people\nFROM ACCESS_LOG AS a\nINNER JOIN TRANSIT_SHADOW AS t\nON a.credential_id = t.credential_id\nWHERE a.gate = 'S4-P6'\nGROUP BY t.destination\nHAVING COUNT(DISTINCT a.credential_id) >= 50" },
@@ -350,7 +398,8 @@ export const EPILOGUE = {
     { type: 'terminal', lines: ['NORTH-LATTICE LOCAL NODE'] },
     { type: 'narration', text: '最後にNORAの声。「監査員」「何だ」「私は、アヤに会ったら何と言えばいいでしょう」あなたは答える。「53人を見つけた、と」' },
     { type: 'terminal', lines: ['EVIDENCE PACKAGE ACCEPTED', 'CASE 53: FORMAL INVESTIGATION OPENED', 'ORISON DEPLOYMENT: SUSPENDED'] },
-    { type: 'dialogue', text: 'FROM: NORA@NORTH-LATTICE 「到着しました」\nFROM: AYA-K 「あなたは53人を見つけた。でも、消されたのは彼らだけじゃない」' },
+    { type: 'dialogue', text: 'FROM: NORA@NORTH-LATTICE 「到着しました」' },
+    { type: 'cg', art: 'aya-withdraw', text: 'FROM: AYA-K\n「あなたは53人を見つけた。でも、消されたのは彼らだけじゃない」' },
     { type: 'terminal', lines: ['PROJECT MIRROR', 'SUBJECT COUNT: 4,812'] },
     { type: 'narration', text: '一つ一つの光の下に、行がある。条件がある。結合がある。そして、条件からこぼれ落ちた人間がいる。' },
     { type: 'terminal', lines: ['NEXT JOURNEY', 'MIRROR DISTRICT', 'ACCESS: LOCKED', '', 'NOT EXISTS'] },
